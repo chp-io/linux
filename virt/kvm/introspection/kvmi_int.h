@@ -20,6 +20,7 @@ extern DECLARE_BITMAP(Kvmi_known_events, KVMI_NUM_EVENTS);
 extern DECLARE_BITMAP(Kvmi_known_vm_events, KVMI_NUM_EVENTS);
 
 #define KVMI(kvm) ((kvm)->kvmi)
+#define VCPUI(vcpu) ((vcpu)->kvmi)
 
 /* kvmi_msg.c */
 bool kvmi_sock_get(struct kvm_introspection *kvmi, int fd);
