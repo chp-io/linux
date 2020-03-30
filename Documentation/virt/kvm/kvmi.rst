@@ -258,3 +258,65 @@ replies. These messages might be extended in futures versions and while
 the kernel will accept shorter messages (older versions) or bigger
 messages (newer versions, ignoring the extra information) it will not
 accept bigger/newer event replies.
+
+2. KVMI_VM_CHECK_COMMAND
+------------------------
+
+:Architectures: all
+:Versions: >= 1
+:Parameters:
+
+::
+
+	struct kvmi_vm_check_command {
+		__u16 id;
+		__u16 padding1;
+		__u32 padding2;
+	};
+
+:Returns:
+
+::
+
+	struct kvmi_error_code;
+
+Checks if the command specified by ``id`` is supported and allowed.
+
+This command is always allowed.
+
+:Errors:
+
+* -KVM_ENOENT - the command specified by ``id`` is unsupported
+* -KVM_EPERM - the command specified by ``id`` is disallowed
+* -KVM_EINVAL - the padding is not zero
+
+3. KVMI_VM_CHECK_EVENT
+----------------------
+
+:Architectures: all
+:Versions: >= 1
+:Parameters:
+
+::
+
+	struct kvmi_vm_check_event {
+		__u16 id;
+		__u16 padding1;
+		__u32 padding2;
+	};
+
+:Returns:
+
+::
+
+	struct kvmi_error_code;
+
+Checks if the event specified by ``id`` is supported and allowed.
+
+This command is always allowed.
+
+:Errors:
+
+* -KVM_ENOENT - the event specified by ``id`` is unsupported
+* -KVM_EPERM - the event specified by ``id`` is disallowed
+* -KVM_EINVAL - the padding is not zero

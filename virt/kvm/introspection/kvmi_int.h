@@ -16,6 +16,8 @@
 #define kvmi_err(kvmi, fmt, ...) \
 	kvm_info("%pU ERROR: " fmt, &kvmi->uuid, ## __VA_ARGS__)
 
+extern DECLARE_BITMAP(Kvmi_known_events, KVMI_NUM_EVENTS);
+
 #define KVMI(kvm) ((kvm)->kvmi)
 
 /* kvmi_msg.c */
