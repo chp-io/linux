@@ -12,7 +12,7 @@
 
 static DECLARE_BITMAP(Kvmi_always_allowed_commands, KVMI_NUM_COMMANDS);
 DECLARE_BITMAP(Kvmi_known_events, KVMI_NUM_EVENTS);
-static DECLARE_BITMAP(Kvmi_known_vm_events, KVMI_NUM_EVENTS);
+DECLARE_BITMAP(Kvmi_known_vm_events, KVMI_NUM_EVENTS);
 static DECLARE_BITMAP(Kvmi_known_vcpu_events, KVMI_NUM_EVENTS);
 
 static struct kmem_cache *msg_cache;
@@ -360,9 +360,17 @@ int kvmi_ioctl_command(struct kvm *kvm, void __user *argp)
 	return err;
 }
 
+static bool is_vm_event_enabled(struct kvm_introspection *kvmi, int event)
+{
+	return test_bit(event, kvmi->vm_event_enable_mask);
+}
+
 static bool kvmi_unhook_event(struct kvm_introspection *kvmi)
 {
 	int err;
+
+	if (!is_vm_event_enabled(kvmi, KVMI_EVENT_UNHOOK))
+		return false;
 
 	err = kvmi_msg_send_unhook(kvmi);
 
@@ -388,4 +396,15 @@ int kvmi_ioctl_preunhook(struct kvm *kvm)
 out:
 	mutex_unlock(&kvm->kvmi_lock);
 	return err;
+}
+
+int kvmi_cmd_vm_control_events(struct kvm_introspection *kvmi,
+				unsigned int event_id, bool enable)
+{
+	if (enable)
+		set_bit(event_id, kvmi->vm_event_enable_mask);
+	else
+		clear_bit(event_id, kvmi->vm_event_enable_mask);
+
+	return 0;
 }

@@ -17,6 +17,7 @@
 	kvm_info("%pU ERROR: " fmt, &kvmi->uuid, ## __VA_ARGS__)
 
 extern DECLARE_BITMAP(Kvmi_known_events, KVMI_NUM_EVENTS);
+extern DECLARE_BITMAP(Kvmi_known_vm_events, KVMI_NUM_EVENTS);
 
 #define KVMI(kvm) ((kvm)->kvmi)
 
@@ -30,5 +31,7 @@ int kvmi_msg_send_unhook(struct kvm_introspection *kvmi);
 /* kvmi.c */
 void *kvmi_msg_alloc(void);
 void kvmi_msg_free(void *addr);
+int kvmi_cmd_vm_control_events(struct kvm_introspection *kvmi,
+				unsigned int event_id, bool enable);
 
 #endif
