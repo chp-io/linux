@@ -107,5 +107,7 @@ int kvmi_arch_cmd_vcpu_get_xsave(struct kvm_vcpu *vcpu,
 				 struct kvmi_vcpu_get_xsave_reply **dest,
 				 size_t *dest_size);
 int kvmi_arch_cmd_vcpu_get_mtrr_type(struct kvm_vcpu *vcpu, u64 gpa, u8 *type);
+int kvmi_arch_cmd_vcpu_control_msr(struct kvm_vcpu *vcpu,
+				   const struct kvmi_vcpu_control_msr *req);
 
 #endif
