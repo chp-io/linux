@@ -777,6 +777,37 @@ memory slots allocated by KVM, considering all address spaces indicated
 by KVM_ADDRESS_SPACE_NUM. Stricly speaking, the returned value refers
 to the first inaccessible GFN, next to the maximum accessible GFN.
 
+17. KVMI_VCPU_GET_XSAVE
+-----------------------
+
+:Architecture: x86
+:Versions: >= 1
+:Parameters:
+
+::
+
+	struct kvmi_vcpu_hdr;
+
+:Returns:
+
+::
+
+	struct kvmi_error_code;
+	struct kvmi_vcpu_get_xsave_reply {
+		__u32 region[0];
+	};
+
+Returns a buffer containing the XSAVE area. Currently, the size of
+``kvm_xsave`` is used, but it could change. The userspace should get
+the buffer size from the message size (kvmi_msg_hdr.size).
+
+:Errors:
+
+* -KVM_EINVAL - the selected vCPU is invalid
+* -KVM_EINVAL - the padding is not zero
+* -KVM_EAGAIN - the selected vCPU can't be introspected yet
+* -KVM_ENOMEM - there is not enough memory to allocate the reply
+
 Events
 ======
 
