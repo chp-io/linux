@@ -46,6 +46,7 @@ enum {
 	KVMI_EVENT_BREAKPOINT = 3,
 	KVMI_EVENT_CR         = 4,
 	KVMI_EVENT_TRAP       = 5,
+	KVMI_EVENT_XSETBV     = 6,
 
 	KVMI_NUM_EVENTS
 };
