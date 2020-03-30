@@ -18,4 +18,26 @@ enum {
 	KVMI_NUM_EVENTS
 };
 
+struct kvmi_msg_hdr {
+	__u16 id;
+	__u16 size;
+	__u32 seq;
+};
+
+/*
+ * kvmi_msg_hdr.size is limited to KVMI_MSG_SIZE.
+ * The kernel side will close the socket if userspace
+ * uses a bigger value.
+ * This limit is used to accommodate the biggest known message,
+ * the commands to read/write a 4K page from/to guest memory.
+ */
+enum {
+	KVMI_MSG_SIZE = (4096 * 2 - sizeof(struct kvmi_msg_hdr))
+};
+
+struct kvmi_error_code {
+	__s32 err;
+	__u32 padding;
+};
+
 #endif /* _UAPI__LINUX_KVMI_H */
