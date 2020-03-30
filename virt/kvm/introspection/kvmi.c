@@ -26,6 +26,13 @@ void *kvmi_msg_alloc(void)
 	return kmem_cache_zalloc(msg_cache, GFP_KERNEL);
 }
 
+void *kvmi_msg_alloc_check(size_t size)
+{
+	if (size > KVMI_MSG_SIZE_ALLOC)
+		return NULL;
+	return kvmi_msg_alloc();
+}
+
 void kvmi_msg_free(void *addr)
 {
 	if (addr)
