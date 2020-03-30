@@ -5464,6 +5464,7 @@ static int handle_invalid_op(struct kvm_vcpu *vcpu)
 
 static int handle_monitor_trap(struct kvm_vcpu *vcpu)
 {
+	kvmi_singlestep_done(vcpu);
 	return 1;
 }
 
@@ -6024,6 +6025,11 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu,
 		kvm_skip_emulated_instruction(vcpu);
 		return 1;
 	}
+
+	if (kvmi_vcpu_running_singlestep(vcpu) &&
+	    exit_reason != EXIT_REASON_EPT_VIOLATION &&
+	    exit_reason != EXIT_REASON_MONITOR_TRAP_FLAG)
+		kvmi_singlestep_failed(vcpu);
 
 	if (exit_reason >= kvm_vmx_max_exit_handlers)
 		goto unexpected_vmexit;
