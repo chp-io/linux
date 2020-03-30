@@ -4648,6 +4648,56 @@ This ioctl resets VCPU registers and control structures according to
 the clear cpu reset definition in the POP. However, the cpu is not put
 into ESA mode. This reset is a superset of the initial reset.
 
+4.125 KVM_INTROSPECTION_HOOK
+----------------------------
+
+:Capability: KVM_CAP_INTROSPECTION
+:Architectures: x86
+:Type: vm ioctl
+:Parameters: struct kvm_introspection (in)
+:Returns: 0 on success, a negative value on error
+
+Errors:
+
+  ======     ==========================================================
+  EFAULT     the introspection is not enabled
+  ENOMEM     the memory allocation failed
+  EEXIST     the VM is already introspected
+  EINVAL     the file descriptor doesn't correspond to an active socket
+  EINVAL     the padding is not zero
+  EPERM      the introspection is disabled (kvm.introspection=0)
+  ======     ==========================================================
+
+This ioctl is used to enable the introspection of the current VM.
+
+::
+
+  struct kvm_introspection {
+	__s32 fd;
+	__u32 padding;
+	__u8 uuid[16];
+  };
+
+fd is the file descriptor of a socket connected to the introspection tool,
+
+padding must be zero (it might be used in the future),
+
+uuid is used for debug and error messages.
+
+The KVMI version can be retrieved using the KVM_CAP_INTROSPECTION of
+the KVM_CHECK_EXTENSION ioctl() at run-time.
+
+4.126 KVM_INTROSPECTION_UNHOOK
+------------------------------
+
+:Capability: KVM_CAP_INTROSPECTION
+:Architectures: x86
+:Type: vm ioctl
+:Parameters: none
+:Returns: 0 on success, a negative value on error
+
+This ioctl is used to free all introspection structures
+related to this VM.
 
 5. The kvm_run structure
 ========================
