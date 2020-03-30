@@ -18,6 +18,7 @@
 
 extern DECLARE_BITMAP(Kvmi_known_events, KVMI_NUM_EVENTS);
 extern DECLARE_BITMAP(Kvmi_known_vm_events, KVMI_NUM_EVENTS);
+extern DECLARE_BITMAP(Kvmi_known_vcpu_events, KVMI_NUM_EVENTS);
 
 #define KVMI(kvm) ((kvm)->kvmi)
 #define VCPUI(vcpu) ((vcpu)->kvmi)
@@ -39,6 +40,8 @@ int kvmi_add_job(struct kvm_vcpu *vcpu,
 void kvmi_run_jobs(struct kvm_vcpu *vcpu);
 int kvmi_cmd_vm_control_events(struct kvm_introspection *kvmi,
 				unsigned int event_id, bool enable);
+int kvmi_cmd_vcpu_control_events(struct kvm_vcpu *vcpu,
+				 unsigned int event_id, bool enable);
 int kvmi_cmd_read_physical(struct kvm *kvm, u64 gpa, size_t size,
 			   int (*send)(struct kvm_introspection *,
 					const struct kvmi_msg_hdr*,

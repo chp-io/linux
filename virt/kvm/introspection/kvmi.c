@@ -16,7 +16,7 @@
 static DECLARE_BITMAP(Kvmi_always_allowed_commands, KVMI_NUM_COMMANDS);
 DECLARE_BITMAP(Kvmi_known_events, KVMI_NUM_EVENTS);
 DECLARE_BITMAP(Kvmi_known_vm_events, KVMI_NUM_EVENTS);
-static DECLARE_BITMAP(Kvmi_known_vcpu_events, KVMI_NUM_EVENTS);
+DECLARE_BITMAP(Kvmi_known_vcpu_events, KVMI_NUM_EVENTS);
 
 static struct kmem_cache *msg_cache;
 static struct kmem_cache *job_cache;
@@ -572,6 +572,19 @@ int kvmi_cmd_vm_control_events(struct kvm_introspection *kvmi,
 		set_bit(event_id, kvmi->vm_event_enable_mask);
 	else
 		clear_bit(event_id, kvmi->vm_event_enable_mask);
+
+	return 0;
+}
+
+int kvmi_cmd_vcpu_control_events(struct kvm_vcpu *vcpu,
+				 unsigned int event_id, bool enable)
+{
+	struct kvm_vcpu_introspection *vcpui = VCPUI(vcpu);
+
+	if (enable)
+		set_bit(event_id, vcpui->ev_enable_mask);
+	else
+		clear_bit(event_id, vcpui->ev_enable_mask);
 
 	return 0;
 }
