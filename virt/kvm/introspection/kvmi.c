@@ -12,6 +12,8 @@
 
 static DECLARE_BITMAP(Kvmi_always_allowed_commands, KVMI_NUM_COMMANDS);
 DECLARE_BITMAP(Kvmi_known_events, KVMI_NUM_EVENTS);
+static DECLARE_BITMAP(Kvmi_known_vm_events, KVMI_NUM_EVENTS);
+static DECLARE_BITMAP(Kvmi_known_vcpu_events, KVMI_NUM_EVENTS);
 
 static struct kmem_cache *msg_cache;
 
@@ -56,7 +58,13 @@ static void setup_always_allowed_commands(void)
 
 static void setup_known_events(void)
 {
-	bitmap_zero(Kvmi_known_events, KVMI_NUM_EVENTS);
+	bitmap_zero(Kvmi_known_vm_events, KVMI_NUM_EVENTS);
+	set_bit(KVMI_EVENT_UNHOOK, Kvmi_known_vm_events);
+
+	bitmap_zero(Kvmi_known_vcpu_events, KVMI_NUM_EVENTS);
+
+	bitmap_or(Kvmi_known_events, Kvmi_known_vm_events,
+		  Kvmi_known_vcpu_events, KVMI_NUM_EVENTS);
 }
 
 int kvmi_init(void)
@@ -92,6 +100,8 @@ alloc_kvmi(struct kvm *kvm, const struct kvm_introspection_hook *hook)
 
 	bitmap_copy(kvmi->cmd_allow_mask, Kvmi_always_allowed_commands,
 		    KVMI_NUM_COMMANDS);
+
+	atomic_set(&kvmi->ev_seq, 0);
 
 	kvmi->kvm = kvm;
 
@@ -346,6 +356,36 @@ int kvmi_ioctl_command(struct kvm *kvm, void __user *argp)
 	else
 		err = -EFAULT;
 
+	mutex_unlock(&kvm->kvmi_lock);
+	return err;
+}
+
+static bool kvmi_unhook_event(struct kvm_introspection *kvmi)
+{
+	int err;
+
+	err = kvmi_msg_send_unhook(kvmi);
+
+	return !err;
+}
+
+int kvmi_ioctl_preunhook(struct kvm *kvm)
+{
+	struct kvm_introspection *kvmi;
+	int err = 0;
+
+	mutex_lock(&kvm->kvmi_lock);
+
+	kvmi = KVMI(kvm);
+	if (!kvmi) {
+		err = -EFAULT;
+		goto out;
+	}
+
+	if (!kvmi_unhook_event(kvmi))
+		err = -ENOENT;
+
+out:
 	mutex_unlock(&kvm->kvmi_lock);
 	return err;
 }
