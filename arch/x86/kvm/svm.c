@@ -6109,6 +6109,11 @@ static bool svm_xsaves_supported(void)
 	return boot_cpu_has(X86_FEATURE_XSAVES);
 }
 
+static bool svm_desc_ctrl_supported(void)
+{
+	return true;
+}
+
 static bool svm_umip_emulated(void)
 {
 	return false;
@@ -7475,6 +7480,7 @@ static struct kvm_x86_ops svm_x86_ops __ro_after_init = {
 	.set_idt = svm_set_idt,
 	.get_gdt = svm_get_gdt,
 	.set_gdt = svm_set_gdt,
+	.desc_ctrl_supported = svm_desc_ctrl_supported,
 	.get_dr6 = svm_get_dr6,
 	.set_dr6 = svm_set_dr6,
 	.set_dr7 = svm_set_dr7,
