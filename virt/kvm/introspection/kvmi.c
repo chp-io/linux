@@ -184,3 +184,104 @@ void kvmi_destroy_vm(struct kvm *kvm)
 {
 	kvmi_unhook(kvm);
 }
+
+static int kvmi_ioctl_get_feature(void __user *argp, bool *allow, int *id,
+				  unsigned int nbits)
+{
+	struct kvm_introspection_feature feat;
+	int all_bits = -1;
+
+	if (copy_from_user(&feat, argp, sizeof(feat)))
+		return -EFAULT;
+
+	if (feat.id < 0 && feat.id != all_bits)
+		return -EINVAL;
+
+	if (feat.id > 0 && feat.id >= nbits)
+		return -EINVAL;
+
+	*allow = feat.allow == 1;
+	*id = feat.id;
+
+	return 0;
+}
+
+static void kvmi_control_allowed_events(struct kvm_introspection *kvmi,
+					int id, bool allow)
+{
+	int all_events = -1;
+
+	if (allow) {
+		if (id == all_events)
+			bitmap_fill(kvmi->event_allow_mask, KVMI_NUM_EVENTS);
+		else
+			set_bit(id, kvmi->event_allow_mask);
+	} else {
+		if (id == all_events)
+			bitmap_zero(kvmi->event_allow_mask, KVMI_NUM_EVENTS);
+		else
+			clear_bit(id, kvmi->event_allow_mask);
+	}
+}
+
+int kvmi_ioctl_event(struct kvm *kvm, void __user *argp)
+{
+	struct kvm_introspection *kvmi;
+	int err, id;
+	bool allow;
+
+	err = kvmi_ioctl_get_feature(argp, &allow, &id, KVMI_NUM_EVENTS);
+	if (err)
+		return err;
+
+	mutex_lock(&kvm->kvmi_lock);
+
+	kvmi = KVMI(kvm);
+	if (kvmi)
+		kvmi_control_allowed_events(kvmi, id, allow);
+	else
+		err = -EFAULT;
+
+	mutex_unlock(&kvm->kvmi_lock);
+	return err;
+}
+
+static void kvmi_control_allowed_commands(struct kvm_introspection *kvmi,
+					  int id, bool allow)
+{
+	int all_commands = -1;
+
+	if (allow) {
+		if (id == all_commands)
+			bitmap_fill(kvmi->cmd_allow_mask, KVMI_NUM_COMMANDS);
+		else
+			set_bit(id, kvmi->cmd_allow_mask);
+	} else {
+		if (id == all_commands)
+			bitmap_zero(kvmi->cmd_allow_mask, KVMI_NUM_COMMANDS);
+		else
+			clear_bit(id, kvmi->cmd_allow_mask);
+	}
+}
+
+int kvmi_ioctl_command(struct kvm *kvm, void __user *argp)
+{
+	struct kvm_introspection *kvmi;
+	int err, id;
+	bool allow;
+
+	err = kvmi_ioctl_get_feature(argp, &allow, &id, KVMI_NUM_COMMANDS);
+	if (err)
+		return err;
+
+	mutex_lock(&kvm->kvmi_lock);
+
+	kvmi = KVMI(kvm);
+	if (kvmi)
+		kvmi_control_allowed_commands(kvmi, id, allow);
+	else
+		err = -EFAULT;
+
+	mutex_unlock(&kvm->kvmi_lock);
+	return err;
+}
