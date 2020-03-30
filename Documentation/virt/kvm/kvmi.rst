@@ -756,6 +756,26 @@ The *KVMI_EVENT_TRAP* event will be sent with the effective injected expection.
 * -KVM_EBUSY - another *KVMI_VCPU_INJECT_EXCEPTION*-*KVMI_EVENT_TRAP* pair
                is in progress
 
+16. KVMI_VM_GET_MAX_GFN
+-----------------------
+
+:Architecture: all
+:Versions: >= 1
+:Parameters: none
+:Returns:
+
+::
+
+        struct kvmi_error_code;
+        struct kvmi_vm_get_max_gfn_reply {
+                __u64 gfn;
+        };
+
+Provides the maximum GFN allocated to the VM by walking through all
+memory slots allocated by KVM, considering all address spaces indicated
+by KVM_ADDRESS_SPACE_NUM. Stricly speaking, the returned value refers
+to the first inaccessible GFN, next to the maximum accessible GFN.
+
 Events
 ======
 
