@@ -10,6 +10,8 @@
 
 #define KVMI_MSG_SIZE_ALLOC (sizeof(struct kvmi_msg_hdr) + KVMI_MSG_SIZE)
 
+static DECLARE_BITMAP(Kvmi_always_allowed_commands, KVMI_NUM_COMMANDS);
+
 static struct kmem_cache *msg_cache;
 
 void *kvmi_msg_alloc(void)
@@ -43,8 +45,16 @@ static int kvmi_cache_create(void)
 	return 0;
 }
 
+static void setup_always_allowed_commands(void)
+{
+	bitmap_zero(Kvmi_always_allowed_commands, KVMI_NUM_COMMANDS);
+	set_bit(KVMI_GET_VERSION, Kvmi_always_allowed_commands);
+}
+
 int kvmi_init(void)
 {
+	setup_always_allowed_commands();
+
 	return kvmi_cache_create();
 }
 
@@ -70,6 +80,9 @@ alloc_kvmi(struct kvm *kvm, const struct kvm_introspection_hook *hook)
 
 	BUILD_BUG_ON(sizeof(hook->uuid) != sizeof(kvmi->uuid));
 	memcpy(&kvmi->uuid, &hook->uuid, sizeof(kvmi->uuid));
+
+	bitmap_copy(kvmi->cmd_allow_mask, Kvmi_always_allowed_commands,
+		    KVMI_NUM_COMMANDS);
 
 	kvmi->kvm = kvm;
 
@@ -282,8 +295,8 @@ int kvmi_ioctl_event(struct kvm *kvm, void __user *argp)
 	return err;
 }
 
-static void kvmi_control_allowed_commands(struct kvm_introspection *kvmi,
-					  int id, bool allow)
+static int kvmi_control_allowed_commands(struct kvm_introspection *kvmi,
+					 int id, bool allow)
 {
 	int all_commands = -1;
 
@@ -294,10 +307,16 @@ static void kvmi_control_allowed_commands(struct kvm_introspection *kvmi,
 			set_bit(id, kvmi->cmd_allow_mask);
 	} else {
 		if (id == all_commands)
-			bitmap_zero(kvmi->cmd_allow_mask, KVMI_NUM_COMMANDS);
+			bitmap_copy(kvmi->cmd_allow_mask,
+				    Kvmi_always_allowed_commands,
+				    KVMI_NUM_COMMANDS);
+		else if (test_bit(id, Kvmi_always_allowed_commands))
+			return -EPERM;
 		else
 			clear_bit(id, kvmi->cmd_allow_mask);
 	}
+
+	return 0;
 }
 
 int kvmi_ioctl_command(struct kvm *kvm, void __user *argp)
@@ -314,7 +333,7 @@ int kvmi_ioctl_command(struct kvm *kvm, void __user *argp)
 
 	kvmi = KVMI(kvm);
 	if (kvmi)
-		kvmi_control_allowed_commands(kvmi, id, allow);
+		err = kvmi_control_allowed_commands(kvmi, id, allow);
 	else
 		err = -EFAULT;
 
