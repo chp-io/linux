@@ -128,5 +128,7 @@ bool kvmi_arch_pf_event(struct kvm_vcpu *vcpu, gpa_t gpa, gva_t gva,
 			u8 access);
 bool kvmi_arch_pf_of_interest(struct kvm_vcpu *vcpu);
 void kvmi_arch_features(struct kvmi_features *feat);
+bool kvmi_arch_start_singlestep(struct kvm_vcpu *vcpu);
+bool kvmi_arch_stop_singlestep(struct kvm_vcpu *vcpu);
 
 #endif
