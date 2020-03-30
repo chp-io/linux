@@ -9,6 +9,30 @@
 #include "kvmi_int.h"
 
 static bool is_vm_command(u16 id);
+static bool is_vcpu_command(u16 id);
+
+struct kvmi_vcpu_cmd_job {
+	struct {
+		struct kvmi_msg_hdr hdr;
+		struct kvmi_vcpu_hdr cmd;
+	} *msg;
+	struct kvm_vcpu *vcpu;
+};
+
+static const char *const msg_IDs[] = {
+	[KVMI_GET_VERSION]       = "KVMI_GET_VERSION",
+	[KVMI_VM_CHECK_COMMAND]  = "KVMI_VM_CHECK_COMMAND",
+	[KVMI_VM_CHECK_EVENT]    = "KVMI_VM_CHECK_EVENT",
+	[KVMI_VM_CONTROL_EVENTS] = "KVMI_VM_CONTROL_EVENTS",
+	[KVMI_VM_GET_INFO]       = "KVMI_VM_GET_INFO",
+	[KVMI_VM_READ_PHYSICAL]  = "KVMI_VM_READ_PHYSICAL",
+	[KVMI_VM_WRITE_PHYSICAL] = "KVMI_VM_WRITE_PHYSICAL",
+};
+
+static const char *id2str(u16 id)
+{
+	return id < ARRAY_SIZE(msg_IDs) ? msg_IDs[id] : "unknown";
+}
 
 bool kvmi_sock_get(struct kvm_introspection *kvmi, int fd)
 {
@@ -105,6 +129,28 @@ static bool is_command_allowed(struct kvm_introspection *kvmi, u16 id)
 	return id < KVMI_NUM_COMMANDS && test_bit(id, kvmi->cmd_allow_mask);
 }
 
+static bool invalid_vcpu_hdr(const struct kvmi_vcpu_hdr *hdr)
+{
+	return hdr->padding1 || hdr->padding2;
+}
+
+static int kvmi_get_vcpu(struct kvm_introspection *kvmi, unsigned int vcpu_idx,
+			 struct kvm_vcpu **dest)
+{
+	struct kvm *kvm = kvmi->kvm;
+	struct kvm_vcpu *vcpu;
+
+	if (vcpu_idx >= atomic_read(&kvm->online_vcpus))
+		return -KVM_EINVAL;
+
+	vcpu = kvm_get_vcpu(kvm, vcpu_idx);
+	if (!vcpu)
+		return -KVM_EINVAL;
+
+	*dest = vcpu;
+	return 0;
+}
+
 static int handle_get_version(struct kvm_introspection *kvmi,
 			      const struct kvmi_msg_hdr *msg, const void *req)
 {
@@ -125,7 +171,7 @@ static int handle_check_command(struct kvm_introspection *kvmi,
 
 	if (req->padding1 || req->padding2)
 		ec = -KVM_EINVAL;
-	else if (!is_vm_command(req->id))
+	else if (!is_vm_command(req->id) && !is_vcpu_command(req->id))
 		ec = -KVM_ENOENT;
 	else if (!is_command_allowed(kvmi, req->id))
 		ec = -KVM_EPERM;
@@ -261,6 +307,60 @@ static bool is_vm_command(u16 id)
 	return id < ARRAY_SIZE(msg_vm) && !!msg_vm[id];
 }
 
+/*
+ * These commands are executed from the vCPU thread. The receiving thread
+ * passes the messages using a newly allocated 'struct kvmi_vcpu_cmd_job'
+ * and signals the vCPU to handle the command (which includes
+ * sending back the reply).
+ */
+static int(*const msg_vcpu[])(const struct kvmi_vcpu_cmd_job *,
+			      const struct kvmi_msg_hdr *, const void *) = {
+};
+
+static bool is_vcpu_command(u16 id)
+{
+	return id < ARRAY_SIZE(msg_vcpu) && !!msg_vcpu[id];
+}
+
+static void kvmi_job_vcpu_cmd(struct kvm_vcpu *vcpu, void *ctx)
+{
+	struct kvmi_vcpu_cmd_job *job = ctx;
+	size_t id = job->msg->hdr.id;
+	int err;
+
+	job->vcpu = vcpu;
+
+	err = msg_vcpu[id](job, &job->msg->hdr, job->msg + 1);
+
+	if (err) {
+		struct kvm_introspection *kvmi = KVMI(vcpu->kvm);
+
+		kvmi_err(kvmi, "%s: msg id %zu (%s) size %u err %d\n",
+			 __func__, id, id2str(id), job->msg->hdr.size, err);
+		kvmi_sock_shutdown(kvmi);
+	}
+}
+
+static void kvmi_free_ctx(void *_ctx)
+{
+	const struct kvmi_vcpu_cmd_job *ctx = _ctx;
+
+	kvmi_msg_free(ctx->msg);
+	kfree(ctx);
+}
+
+static int kvmi_msg_queue_to_vcpu(struct kvm_vcpu *vcpu,
+				  const struct kvmi_vcpu_cmd_job *cmd)
+{
+	return kvmi_add_job(vcpu, kvmi_job_vcpu_cmd, (void *)cmd,
+			    kvmi_free_ctx);
+}
+
+static bool is_vcpu_message(u16 id)
+{
+	return is_vcpu_command(id);
+}
+
 static struct kvmi_msg_hdr *kvmi_msg_recv(struct kvm_introspection *kvmi)
 {
 	struct kvmi_msg_hdr *msg;
@@ -308,9 +408,68 @@ static int kvmi_msg_vm_reply_ec(struct kvm_introspection *kvmi,
 	return kvmi_msg_vm_reply(kvmi, msg, ec, NULL, 0);
 }
 
+static bool vcpu_can_handle_commands(struct kvm_vcpu *vcpu)
+{
+	return vcpu->arch.mp_state != KVM_MP_STATE_UNINITIALIZED;
+}
+
+static bool kvmi_get_vcpu_if_ready(struct kvm_introspection *kvmi,
+				   unsigned int vcpu_idx,
+				   struct kvm_vcpu **vcpu)
+{
+	int err;
+
+	err = kvmi_get_vcpu(kvmi, vcpu_idx, vcpu);
+
+	return !err && vcpu_can_handle_commands(*vcpu);
+}
+
+static int kvmi_validate_vcpu_cmd(struct kvm_introspection *kvmi,
+				  struct kvmi_msg_hdr *msg,
+				  struct kvm_vcpu **vcpu)
+{
+	struct kvmi_vcpu_hdr *cmd = (struct kvmi_vcpu_hdr *)(msg + 1);
+	unsigned int vcpu_idx = cmd->vcpu;
+
+	if (invalid_vcpu_hdr(cmd))
+		return -KVM_EINVAL;
+
+	if (!kvmi_get_vcpu_if_ready(kvmi, vcpu_idx, vcpu))
+		return -KVM_EAGAIN;
+
+	return 0;
+}
+
+static int kvmi_msg_dispatch_vcpu_cmd(struct kvm_introspection *kvmi,
+				      struct kvmi_msg_hdr *msg,
+				      bool *queued)
+{
+	struct kvmi_vcpu_cmd_job *job_cmd;
+	struct kvm_vcpu *vcpu = NULL;
+	int err, ec;
+
+	ec = kvmi_validate_vcpu_cmd(kvmi, msg, &vcpu);
+	if (ec)
+		return kvmi_msg_vm_reply_ec(kvmi, msg, ec);
+
+	job_cmd = kzalloc(sizeof(*job_cmd), GFP_KERNEL);
+	if (!job_cmd)
+		return -KVM_ENOMEM;
+
+	job_cmd->msg = (void *)msg;
+
+	err = kvmi_msg_queue_to_vcpu(vcpu, job_cmd);
+	if (err)
+		kfree(job_cmd);
+
+	*queued = err == 0;
+	return err;
+}
+
 bool kvmi_msg_process(struct kvm_introspection *kvmi)
 {
 	struct kvmi_msg_hdr *msg;
+	bool queued = false;
 	int err = -1;
 
 	msg = kvmi_msg_recv(kvmi);
@@ -322,11 +481,17 @@ bool kvmi_msg_process(struct kvm_introspection *kvmi)
 			err = kvmi_msg_dispatch_vm_cmd(kvmi, msg);
 		else
 			err = kvmi_msg_vm_reply_ec(kvmi, msg, -KVM_EPERM);
+	} else if (is_vcpu_message(msg->id)) {
+		if (is_message_allowed(kvmi, msg->id))
+			err = kvmi_msg_dispatch_vcpu_cmd(kvmi, msg, &queued);
+		else
+			err = kvmi_msg_vm_reply_ec(kvmi, msg, -KVM_EPERM);
 	} else {
 		err = kvmi_msg_vm_reply_ec(kvmi, msg, -KVM_ENOSYS);
 	}
 
-	kvmi_msg_free(msg);
+	if (!queued)
+		kvmi_msg_free(msg);
 out:
 	return err == 0;
 }
