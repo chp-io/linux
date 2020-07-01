@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Arasan Secure Digital Host Controller Interface.
  * Copyright (C) 2011 - 2012 Michal Simek <monstr@monstr.eu>
@@ -12,11 +13,6 @@
  *
  * Authors: Xiaobo Xie <X.Xie@freescale.com>
  *	    Anton Vorontsov <avorontsov@ru.mvista.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or (at
- * your option) any later version.
  */
 
 #include <linux/clk-provider.h>
@@ -116,6 +112,12 @@ static const struct sdhci_arasan_soc_ctl_map rk3399_soc_ctl_map = {
 	.baseclkfreq = { .reg = 0xf000, .width = 8, .shift = 8 },
 	.clockmultiplier = { .reg = 0xf02c, .width = 8, .shift = 0},
 	.hiword_update = true,
+};
+
+static const struct sdhci_arasan_soc_ctl_map intel_lgm_emmc_soc_ctl_map = {
+	.baseclkfreq = { .reg = 0xa0, .width = 8, .shift = 2 },
+	.clockmultiplier = { .reg = 0, .width = -1, .shift = -1 },
+	.hiword_update = false,
 };
 
 /**
@@ -231,25 +233,6 @@ static void sdhci_arasan_set_clock(struct sdhci_host *host, unsigned int clock)
 	}
 }
 
-static void sdhci_arasan_am654_set_clock(struct sdhci_host *host,
-					 unsigned int clock)
-{
-	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
-	struct sdhci_arasan_data *sdhci_arasan = sdhci_pltfm_priv(pltfm_host);
-
-	if (sdhci_arasan->is_phy_on) {
-		phy_power_off(sdhci_arasan->phy);
-		sdhci_arasan->is_phy_on = false;
-	}
-
-	sdhci_set_clock(host, clock);
-
-	if (clock > PHY_CLK_TOO_SLOW_HZ) {
-		phy_power_on(sdhci_arasan->phy);
-		sdhci_arasan->is_phy_on = true;
-	}
-}
-
 static void sdhci_arasan_hs400_enhanced_strobe(struct mmc_host *mmc,
 					struct mmc_ios *ios)
 {
@@ -335,29 +318,6 @@ static struct sdhci_arasan_of_data sdhci_arasan_data = {
 	.pdata = &sdhci_arasan_pdata,
 };
 
-static const struct sdhci_ops sdhci_arasan_am654_ops = {
-	.set_clock = sdhci_arasan_am654_set_clock,
-	.get_max_clock = sdhci_pltfm_clk_get_max_clock,
-	.get_timeout_clock = sdhci_pltfm_clk_get_max_clock,
-	.set_bus_width = sdhci_set_bus_width,
-	.reset = sdhci_arasan_reset,
-	.set_uhs_signaling = sdhci_set_uhs_signaling,
-};
-
-static const struct sdhci_pltfm_data sdhci_arasan_am654_pdata = {
-	.ops = &sdhci_arasan_am654_ops,
-	.quirks = SDHCI_QUIRK_CAP_CLOCK_BASE_BROKEN  |
-		  SDHCI_QUIRK_INVERTED_WRITE_PROTECT |
-		  SDHCI_QUIRK_MULTIBLOCK_READ_ACMD12,
-	.quirks2 = SDHCI_QUIRK2_PRESET_VALUE_BROKEN |
-		   SDHCI_QUIRK2_CLOCK_DIV_ZERO_BROKEN |
-		   SDHCI_QUIRK2_CAPS_BIT63_FOR_HS400,
-};
-
-static const struct sdhci_arasan_of_data sdhci_arasan_am654_data = {
-	.pdata = &sdhci_arasan_am654_pdata,
-};
-
 static u32 sdhci_arasan_cqhci_irq(struct sdhci_host *host, u32 intmask)
 {
 	int cmd_error = 0;
@@ -416,6 +376,11 @@ static const struct sdhci_pltfm_data sdhci_arasan_cqe_pdata = {
 
 static struct sdhci_arasan_of_data sdhci_arasan_rk3399_data = {
 	.soc_ctl_map = &rk3399_soc_ctl_map,
+	.pdata = &sdhci_arasan_cqe_pdata,
+};
+
+static struct sdhci_arasan_of_data intel_lgm_emmc_data = {
+	.soc_ctl_map = &intel_lgm_emmc_soc_ctl_map,
 	.pdata = &sdhci_arasan_cqe_pdata,
 };
 
@@ -521,8 +486,8 @@ static const struct of_device_id sdhci_arasan_of_match[] = {
 		.data = &sdhci_arasan_rk3399_data,
 	},
 	{
-		.compatible = "ti,am654-sdhci-5.1",
-		.data = &sdhci_arasan_am654_data,
+		.compatible = "intel,lgm-sdhci-5.1-emmc",
+		.data = &intel_lgm_emmc_data,
 	},
 	/* Generic compatible below here */
 	{
@@ -878,7 +843,10 @@ static int sdhci_arasan_probe(struct platform_device *pdev)
 		host->mmc_host_ops.start_signal_voltage_switch =
 					sdhci_arasan_voltage_switch;
 		sdhci_arasan->has_cqe = true;
-		host->mmc->caps2 |= MMC_CAP2_CQE | MMC_CAP2_CQE_DCMD;
+		host->mmc->caps2 |= MMC_CAP2_CQE;
+
+		if (!of_property_read_bool(np, "disable-cqe-dcmd"))
+			host->mmc->caps2 |= MMC_CAP2_CQE_DCMD;
 	}
 
 	ret = sdhci_arasan_add_host(sdhci_arasan);

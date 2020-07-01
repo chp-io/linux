@@ -262,6 +262,7 @@ struct ave_private {
 	struct regmap		*regmap;
 	unsigned int		pinmode_mask;
 	unsigned int		pinmode_val;
+	u32			wolopts;
 
 	/* stats */
 	struct ave_stats	stats_rx;
@@ -1119,7 +1120,7 @@ static void ave_phy_adjust_link(struct net_device *ndev)
 		if (phydev->asym_pause)
 			rmt_adv |= LPA_PAUSE_ASYM;
 
-		lcl_adv = ethtool_adv_to_lcl_adv_t(phydev->advertising);
+		lcl_adv = linkmode_adv_to_lcl_adv_t(phydev->advertising);
 		cap = mii_resolve_flowctrl_fdx(lcl_adv, rmt_adv);
 		if (cap & FLOW_CTRL_TX)
 			txcr |= AVE_TXCR_FLOCTR;
@@ -1210,8 +1211,12 @@ static int ave_init(struct net_device *ndev)
 
 	priv->phydev = phydev;
 
-	phy_ethtool_get_wol(phydev, &wol);
+	ave_ethtool_get_wol(ndev, &wol);
 	device_set_wakeup_capable(&ndev->dev, !!wol.supported);
+
+	/* set wol initial state disabled */
+	wol.wolopts = 0;
+	ave_ethtool_set_wol(ndev, &wol);
 
 	if (!phy_interface_is_rgmii(phydev))
 		phy_set_max_speed(phydev, SPEED_100);
@@ -1548,7 +1553,6 @@ static int ave_probe(struct platform_device *pdev)
 	struct ave_private *priv;
 	struct net_device *ndev;
 	struct device_node *np;
-	struct resource	*res;
 	const void *mac_addr;
 	void __iomem *base;
 	const char *name;
@@ -1562,19 +1566,16 @@ static int ave_probe(struct platform_device *pdev)
 
 	np = dev->of_node;
 	phy_mode = of_get_phy_mode(np);
-	if (phy_mode < 0) {
+	if ((int)phy_mode < 0) {
 		dev_err(dev, "phy-mode not found\n");
 		return -EINVAL;
 	}
 
 	irq = platform_get_irq(pdev, 0);
-	if (irq < 0) {
-		dev_err(dev, "IRQ not found\n");
+	if (irq < 0)
 		return irq;
-	}
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	base = devm_ioremap_resource(dev, res);
+	base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(base))
 		return PTR_ERR(base);
 
@@ -1594,7 +1595,7 @@ static int ave_probe(struct platform_device *pdev)
 	ndev->max_mtu = AVE_MAX_ETHFRAME - (ETH_HLEN + ETH_FCS_LEN);
 
 	mac_addr = of_get_mac_address(np);
-	if (mac_addr)
+	if (!IS_ERR(mac_addr))
 		ether_addr_copy(ndev->dev_addr, mac_addr);
 
 	/* if the mac address is invalid, use random mac address */
@@ -1661,19 +1662,19 @@ static int ave_probe(struct platform_device *pdev)
 					       "socionext,syscon-phy-mode",
 					       1, 0, &args);
 	if (ret) {
-		netdev_err(ndev, "can't get syscon-phy-mode property\n");
+		dev_err(dev, "can't get syscon-phy-mode property\n");
 		goto out_free_netdev;
 	}
 	priv->regmap = syscon_node_to_regmap(args.np);
 	of_node_put(args.np);
 	if (IS_ERR(priv->regmap)) {
-		netdev_err(ndev, "can't map syscon-phy-mode\n");
+		dev_err(dev, "can't map syscon-phy-mode\n");
 		ret = PTR_ERR(priv->regmap);
 		goto out_free_netdev;
 	}
 	ret = priv->data->get_pinmode(priv, phy_mode, args.args[0]);
 	if (ret) {
-		netdev_err(ndev, "invalid phy-mode setting\n");
+		dev_err(dev, "invalid phy-mode setting\n");
 		goto out_free_netdev;
 	}
 
@@ -1736,6 +1737,58 @@ static int ave_remove(struct platform_device *pdev)
 
 	return 0;
 }
+
+#ifdef CONFIG_PM_SLEEP
+static int ave_suspend(struct device *dev)
+{
+	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
+	struct net_device *ndev = dev_get_drvdata(dev);
+	struct ave_private *priv = netdev_priv(ndev);
+	int ret = 0;
+
+	if (netif_running(ndev)) {
+		ret = ave_stop(ndev);
+		netif_device_detach(ndev);
+	}
+
+	ave_ethtool_get_wol(ndev, &wol);
+	priv->wolopts = wol.wolopts;
+
+	return ret;
+}
+
+static int ave_resume(struct device *dev)
+{
+	struct ethtool_wolinfo wol = { .cmd = ETHTOOL_GWOL };
+	struct net_device *ndev = dev_get_drvdata(dev);
+	struct ave_private *priv = netdev_priv(ndev);
+	int ret = 0;
+
+	ave_global_reset(ndev);
+
+	ave_ethtool_get_wol(ndev, &wol);
+	wol.wolopts = priv->wolopts;
+	ave_ethtool_set_wol(ndev, &wol);
+
+	if (ndev->phydev) {
+		ret = phy_resume(ndev->phydev);
+		if (ret)
+			return ret;
+	}
+
+	if (netif_running(ndev)) {
+		ret = ave_open(ndev);
+		netif_device_attach(ndev);
+	}
+
+	return ret;
+}
+
+static SIMPLE_DEV_PM_OPS(ave_pm_ops, ave_suspend, ave_resume);
+#define AVE_PM_OPS	(&ave_pm_ops)
+#else
+#define AVE_PM_OPS	NULL
+#endif
 
 static int ave_pro4_get_pinmode(struct ave_private *priv,
 				phy_interface_t phy_mode, u32 arg)
@@ -1911,6 +1964,7 @@ static struct platform_driver ave_driver = {
 	.remove = ave_remove,
 	.driver	= {
 		.name = "ave",
+		.pm   = AVE_PM_OPS,
 		.of_match_table	= of_ave_match,
 	},
 };

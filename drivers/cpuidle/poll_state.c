@@ -1,7 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * poll_state.c - Polling idle state
- *
- * This file is released under the GPLv2.
  */
 
 #include <linux/cpuidle.h>
@@ -20,8 +19,10 @@ static int __cpuidle poll_idle(struct cpuidle_device *dev,
 
 	local_irq_enable();
 	if (!current_set_polling_and_test()) {
-		u64 limit = (u64)drv->states[1].target_residency * NSEC_PER_USEC;
 		unsigned int loop_count = 0;
+		u64 limit;
+
+		limit = cpuidle_poll_time(drv, dev);
 
 		while (!need_resched()) {
 			cpu_relax();

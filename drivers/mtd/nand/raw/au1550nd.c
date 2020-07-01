@@ -1,10 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  Copyright (C) 2004 Embedded Edge, LLC
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  */
 
 #include <linux/slab.h>
@@ -138,16 +134,15 @@ static void au_write_buf16(struct nand_chip *this, const u_char *buf, int len)
 
 /**
  * au_read_buf16 -  read chip data into buffer
- * @mtd:	MTD device structure
+ * @this:	NAND chip object
  * @buf:	buffer to store date
  * @len:	number of bytes to read
  *
  * read function for 16bit buswidth
  */
-static void au_read_buf16(struct mtd_info *mtd, u_char *buf, int len)
+static void au_read_buf16(struct nand_chip *this, u_char *buf, int len)
 {
 	int i;
-	struct nand_chip *this = mtd_to_nand(mtd);
 	u16 *p = (u16 *) buf;
 	len >>= 1;
 
@@ -430,7 +425,7 @@ static int au1550nd_probe(struct platform_device *pdev)
 	ctx->cs = cs;
 
 	this->legacy.dev_ready = au1550_device_ready;
-	this->select_chip = au1550_select_chip;
+	this->legacy.select_chip = au1550_select_chip;
 	this->legacy.cmdfunc = au1550_command;
 
 	/* 30 us command delay time */

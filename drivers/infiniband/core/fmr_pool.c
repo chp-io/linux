@@ -148,13 +148,6 @@ static void ib_fmr_batch_release(struct ib_fmr_pool *pool)
 		hlist_del_init(&fmr->cache_node);
 		fmr->remap_count = 0;
 		list_add_tail(&fmr->fmr->list, &fmr_list);
-
-#ifdef DEBUG
-		if (fmr->ref_count !=0) {
-			pr_warn(PFX "Unmapping FMR 0x%08x with ref count %d\n",
-				fmr, fmr->ref_count);
-		}
-#endif
 	}
 
 	list_splice_init(&pool->dirty_list, &unmap_list);
@@ -211,8 +204,8 @@ struct ib_fmr_pool *ib_create_fmr_pool(struct ib_pd             *pd,
 		return ERR_PTR(-EINVAL);
 
 	device = pd->device;
-	if (!device->alloc_fmr    || !device->dealloc_fmr  ||
-	    !device->map_phys_fmr || !device->unmap_fmr) {
+	if (!device->ops.alloc_fmr    || !device->ops.dealloc_fmr  ||
+	    !device->ops.map_phys_fmr || !device->ops.unmap_fmr) {
 		dev_info(&device->dev, "Device does not support FMRs\n");
 		return ERR_PTR(-ENOSYS);
 	}
@@ -474,7 +467,7 @@ EXPORT_SYMBOL(ib_fmr_pool_map_phys);
  * Unmap an FMR.  The FMR mapping may remain valid until the FMR is
  * reused (or until ib_flush_fmr_pool() is called).
  */
-int ib_fmr_pool_unmap(struct ib_pool_fmr *fmr)
+void ib_fmr_pool_unmap(struct ib_pool_fmr *fmr)
 {
 	struct ib_fmr_pool *pool;
 	unsigned long flags;
@@ -496,14 +489,6 @@ int ib_fmr_pool_unmap(struct ib_pool_fmr *fmr)
 		}
 	}
 
-#ifdef DEBUG
-	if (fmr->ref_count < 0)
-		pr_warn(PFX "FMR %p has ref count %d < 0\n",
-			fmr, fmr->ref_count);
-#endif
-
 	spin_unlock_irqrestore(&pool->pool_lock, flags);
-
-	return 0;
 }
 EXPORT_SYMBOL(ib_fmr_pool_unmap);

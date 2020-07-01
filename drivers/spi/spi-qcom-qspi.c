@@ -90,6 +90,9 @@
 #define PIO_DATAOUT_1B		0x0020
 #define PIO_DATAOUT_4B		0x0024
 
+#define RD_FIFO_CFG		0x0028
+#define CONTINUOUS_MODE		BIT(0)
+
 #define RD_FIFO_STATUS	0x002c
 #define FIFO_EMPTY	BIT(11)
 #define WR_CNTS_MSK	0x7f0
@@ -98,9 +101,6 @@
 #define RDY_32BYTE	BIT(2)
 #define RDY_16BYTE	BIT(1)
 #define FIFO_RDY	BIT(0)
-
-#define RD_FIFO_CFG		0x0028
-#define CONTINUOUS_MODE		BIT(0)
 
 #define RD_FIFO_RESET		0x0030
 #define RESET_FIFO		BIT(0)
@@ -139,7 +139,7 @@ struct qcom_qspi {
 	struct device *dev;
 	struct clk_bulk_data clks[QSPI_NUM_CLKS];
 	struct qspi_xfer xfer;
-	/* Lock to protect data accessed by IRQs */
+	/* Lock to protect xfer and IRQ accessed registers */
 	spinlock_t lock;
 };
 
@@ -424,7 +424,6 @@ static int qcom_qspi_probe(struct platform_device *pdev)
 {
 	int ret;
 	struct device *dev;
-	struct resource *res;
 	struct spi_master *master;
 	struct qcom_qspi *ctrl;
 
@@ -440,8 +439,7 @@ static int qcom_qspi_probe(struct platform_device *pdev)
 
 	spin_lock_init(&ctrl->lock);
 	ctrl->dev = dev;
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	ctrl->base = devm_ioremap_resource(dev, res);
+	ctrl->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(ctrl->base)) {
 		ret = PTR_ERR(ctrl->base);
 		goto exit_probe_master_put;
@@ -454,10 +452,8 @@ static int qcom_qspi_probe(struct platform_device *pdev)
 		goto exit_probe_master_put;
 
 	ret = platform_get_irq(pdev, 0);
-	if (ret < 0) {
-		dev_err(dev, "Failed to get irq %d\n", ret);
+	if (ret < 0)
 		goto exit_probe_master_put;
-	}
 	ret = devm_request_irq(dev, ret, qcom_qspi_irq,
 			IRQF_TRIGGER_HIGH, dev_name(dev), ctrl);
 	if (ret) {

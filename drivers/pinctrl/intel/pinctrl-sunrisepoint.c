@@ -18,6 +18,7 @@
 #define SPT_PAD_OWN	0x020
 #define SPT_PADCFGLOCK	0x0a0
 #define SPT_HOSTSW_OWN	0x0d0
+#define SPT_GPI_IS	0x100
 #define SPT_GPI_IE	0x120
 
 #define SPT_COMMUNITY(b, s, e)				\
@@ -26,6 +27,7 @@
 		.padown_offset = SPT_PAD_OWN,		\
 		.padcfglock_offset = SPT_PADCFGLOCK,	\
 		.hostown_offset = SPT_HOSTSW_OWN,	\
+		.is_offset = SPT_GPI_IS,		\
 		.ie_offset = SPT_GPI_IE,		\
 		.gpp_size = 24,				\
 		.gpp_num_padown_regs = 4,		\
@@ -591,15 +593,10 @@ static const struct acpi_device_id spt_pinctrl_acpi_match[] = {
 };
 MODULE_DEVICE_TABLE(acpi, spt_pinctrl_acpi_match);
 
-static int spt_pinctrl_probe(struct platform_device *pdev)
-{
-	return intel_pinctrl_probe_by_hid(pdev);
-}
-
 static INTEL_PINCTRL_PM_OPS(spt_pinctrl_pm_ops);
 
 static struct platform_driver spt_pinctrl_driver = {
-	.probe = spt_pinctrl_probe,
+	.probe = intel_pinctrl_probe_by_hid,
 	.driver = {
 		.name = "sunrisepoint-pinctrl",
 		.acpi_match_table = spt_pinctrl_acpi_match,

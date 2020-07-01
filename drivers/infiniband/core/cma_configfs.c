@@ -33,7 +33,10 @@
 #include <linux/module.h>
 #include <linux/configfs.h>
 #include <rdma/ib_verbs.h>
+#include <rdma/rdma_cm.h>
+
 #include "core_priv.h"
+#include "cma_priv.h"
 
 struct cma_device;
 
@@ -339,12 +342,18 @@ static struct configfs_subsystem cma_subsys = {
 
 int __init cma_configfs_init(void)
 {
+	int ret;
+
 	config_group_init(&cma_subsys.su_group);
 	mutex_init(&cma_subsys.su_mutex);
-	return configfs_register_subsystem(&cma_subsys);
+	ret = configfs_register_subsystem(&cma_subsys);
+	if (ret)
+		mutex_destroy(&cma_subsys.su_mutex);
+	return ret;
 }
 
 void __exit cma_configfs_exit(void)
 {
 	configfs_unregister_subsystem(&cma_subsys);
+	mutex_destroy(&cma_subsys.su_mutex);
 }
