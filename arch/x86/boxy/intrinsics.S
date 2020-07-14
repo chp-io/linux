@@ -19,6 +19,35 @@
         .code64
         .intel_syntax noprefix
 
+/* -------------------------------------------------------------------------- */
+/* _mv_cpuid                                                                  */
+/* -------------------------------------------------------------------------- */
+
+        .globl  _mv_cpuid
+        .type   _mv_cpuid, @function
+_mv_cpuid:
+        push rbx
+
+        mov r10, rdx
+        mov r11, rcx
+
+        mov eax, [rdi]
+        cpuid
+
+        mov [rdi], eax
+        mov [rsi], ebx
+        mov [r10], ecx
+        mov [r11], edx
+
+        pop rbx
+        ret
+        .size _mv_cpuid, .-_mv_cpuid
+
+
+/* -------------------------------------------------------------------------- */
+/* !!! WARNBING DEPRECATED !!!                                                */
+/* -------------------------------------------------------------------------- */
+
         .globl  asm_vmcall
         .type   asm_vmcall, @function
 asm_vmcall:
@@ -37,6 +66,7 @@ asm_vmcall:
 
         pop rbx
         ret
+        .size asm_vmcall, .-asm_vmcall
 
         .globl  asm_vmcall1
         .type   asm_vmcall1, @function
@@ -57,6 +87,7 @@ asm_vmcall1:
 
         pop rbx
         ret
+        .size asm_vmcall1, .-asm_vmcall1
 
         .globl  asm_vmcall2
         .type   asm_vmcall2, @function
@@ -79,6 +110,7 @@ asm_vmcall2:
 
         pop rbx
         ret
+        .size asm_vmcall2, .-asm_vmcall2
 
         .globl  asm_vmcall3
         .type   asm_vmcall3, @function
@@ -103,6 +135,7 @@ asm_vmcall3:
 
         pop rbx
         ret
+        .size asm_vmcall3, .-asm_vmcall3
 
         .globl  asm_vmcall4
         .type   asm_vmcall4, @function
@@ -129,3 +162,4 @@ asm_vmcall4:
 
         pop rbx
         ret
+        .size asm_vmcall4, .-asm_vmcall4

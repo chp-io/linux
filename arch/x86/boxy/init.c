@@ -21,39 +21,12 @@
 
 static uint32_t __init boxy_detect(void)
 {
-	uint32_t eax;
-	uint32_t ignore[3];
-
-	if (!boot_cpu_has(X86_FEATURE_HYPERVISOR))
-		return 0;
-
-	cpuid(CPUID_BAREFLANK_SYN, &eax, &ignore[0], &ignore[1], &ignore[2]);
-
-    /**
-     * TODO:
-     *
-     * We need to add a Boxy specific CPUID leaf at 0x40000000 that acks like
-     * VMWare and HyperV so that we play nice with nested virtualization.
-     * More importantly, right now we are acking with Bareflank and not
-     * Boxy, so this code could end up detecting someone elses hypervisor.
-     */
-
-	/**
-	 * TODO:
-	 *
-	 * We need to implement versioning to ensure that we are using a guest
-	 * that actually knows how to talk to the hypervisor.
-	 */
-
-	if (eax == CPUID_BAREFLANK_ACK)
-		return 1;
-
-	return 0;
+	return mv_present(MV_SPEC_ID1_VAL);
 }
 
 static void __init boxy_init_platform(void)
 {
-    pv_info.name = "Boxy Hypervisor";
+    pv_info.name = "MicroV Hypervisor";
 
 	boxy_virq_init();
     boxy_vclock_init();
@@ -76,7 +49,7 @@ static bool __init boxy_x2apic_available(void)
 { return true; }
 
 const __initconst struct hypervisor_x86 x86_hyper_boxy = {
-	.name = "Boxy Hypervisor",
+	.name = "MicroV Hypervisor",
 	.detect = boxy_detect,
 	.type = X86_HYPER_BOXY,
 	.init.init_platform	= boxy_init_platform,

@@ -11,6 +11,143 @@
 #include <asm/msr.h>
 #include <asm/processor.h>
 
+// -----------------------------------------------------------------------------
+// Prototypes
+// -----------------------------------------------------------------------------
+
+void
+_mv_cpuid(
+    uint32_t *eax,
+    uint32_t *ebx,
+    uint32_t *ecx,
+    uint32_t *edx);
+
+// -----------------------------------------------------------------------------
+// Scalar Types
+// -----------------------------------------------------------------------------
+
+#define mv_status_t uint64_t
+#define mv_uint8_t uint8_t
+#define mv_uint16_t uint16_t
+#define mv_uint32_t uint32_t
+#define mv_uint64_t uint64_t
+
+// -----------------------------------------------------------------------------
+// Specification IDs
+// -----------------------------------------------------------------------------
+
+#define MV_SPEC_ID1_VAL ((mv_uint32_t)0x3123764D)
+
+// -----------------------------------------------------------------------------
+// Hypervisor Discovery
+// -----------------------------------------------------------------------------
+
+#define MV_CPUID_HYPERVISOR_PRESENT (((mv_uint32_t)1) << 31)
+#define MV_CPUID_SPEC_ID1 (((mv_uint32_t)1) << 0)
+
+#define MV_CPUID_MIN_LEAF_VAL ((mv_uint32_t)0x40000202)
+#define MV_CPUID_MAX_LEAF_VAL ((mv_uint32_t)0x4000FFFF)
+#define MV_CPUID_INIT_VAL ((mv_uint32_t)0x40000200)
+#define MV_CPUID_INC_VAL ((mv_uint32_t)0x100)
+#define MV_CPUID_VENDOR_ID1_VAL ((mv_uint32_t)0x694D6642)
+#define MV_CPUID_VENDOR_ID2_VAL ((mv_uint32_t)0x566F7263)
+
+static inline mv_uint32_t
+mv_present(mv_uint32_t spec_id)
+{
+    mv_uint32_t eax;
+    mv_uint32_t ebx;
+    mv_uint32_t ecx;
+    mv_uint32_t edx;
+    mv_uint32_t max_leaf;
+    mv_uint32_t leaf;
+
+    /**
+     * First check to see if software is running on a hypervisor. Although not
+     * officially documented by Intel/AMD, bit 31 of the feature identifiers is
+     * reserved for hypervisors, and any hypervisor that conforms (at least in
+     * part) to the Hypervisor Top Level Functional Specification will set this.
+     */
+
+    eax = 0x00000001;
+    _mv_cpuid(&eax, &ebx, &ecx, &edx);
+
+    if ((ecx & MV_CPUID_HYPERVISOR_PRESENT) == 0) {
+        return 0;
+    }
+
+    /**
+     * Now that we know that we are running on a hypervisor, the next step is
+     * determine how many hypervisor specific CPUID leaves are supported. This
+     * is done as follows. Note that the MicroV spec defines the min/max values
+     * for the return of this query, which we can also use to determine if this
+     * is MicroV.
+     */
+
+    eax = 0x40000000;
+    _mv_cpuid(&eax, &ebx, &ecx, &edx);
+
+    max_leaf = eax;
+    if (max_leaf < MV_CPUID_MIN_LEAF_VAL || max_leaf > MV_CPUID_MAX_LEAF_VAL) {
+        return 0;
+    }
+
+    /**
+     * Now that we know how many CPUID leaves to parse, we can scan the CPUID
+     * leaves for MicroV. Since MicroV also supports the HyperV and Xen
+     * interfaces, we start at 0x40000200, and increment by 0x100 until we
+     * find MicroV's signature. Normally, the first leaf should be MicroV, but
+     * we need to scan just incase future MicroV specs add additional ABIs.
+     */
+
+    for (leaf = MV_CPUID_INIT_VAL; leaf < max_leaf; leaf += MV_CPUID_INC_VAL) {
+        eax = leaf;
+        _mv_cpuid(&eax, &ebx, &ecx, &edx);
+
+        if (ebx == MV_CPUID_VENDOR_ID1_VAL && ecx == MV_CPUID_VENDOR_ID2_VAL) {
+            break;
+        }
+    }
+
+    if (leaf >= max_leaf) {
+        return 0;
+    }
+
+    /**
+     * Finally, we need to verify which version of the spec software speaks and
+     * verifying that MicroV also speaks this same spec.
+     */
+
+    eax = leaf + 0x00000001U;
+    _mv_cpuid(&eax, &ebx, &ecx, &edx);
+
+    switch (spec_id) {
+        case MV_SPEC_ID1_VAL: {
+            if ((eax & MV_CPUID_SPEC_ID1) == 0) {
+                return 0;
+            }
+
+            break;
+        }
+
+        default:
+            return 0;
+    }
+
+    /**
+     * If we got this far, it means that software is running on MicroV, and
+     * both MicroV and software speak the same specification, which means
+     * software may proceed with communicating with MicroV. The next step is
+     * to open an handle and use it for additional hypercalls.
+     */
+
+    return 1;
+}
+
+/* -------------------------------------------------------------------------- */
+/* !!! WARNING DEPRECATED !!!                                                 */
+/* -------------------------------------------------------------------------- */
+
 #define SUCCESS 0
 #define FAILURE 0xFFFFFFFFFFFFFFFF
 #define SUSPEND 0xFFFFFFFFFFFFFFFE
@@ -26,13 +163,6 @@ uint64_t asm_vmcall1(void *r1);
 uint64_t asm_vmcall2(void *r1, void *r2);
 uint64_t asm_vmcall3(void *r1, void *r2, void *r3);
 uint64_t asm_vmcall4(void *r1, void *r2, void *r3, void *r4);
-
-/* -------------------------------------------------------------------------- */
-/* CPUID                                                                      */
-/* -------------------------------------------------------------------------- */
-
-#define CPUID_BAREFLANK_SYN 0x4BF00000
-#define CPUID_BAREFLANK_ACK 0x4BF00001
 
 /* -------------------------------------------------------------------------- */
 /* Virtual IRQs                                                               */
