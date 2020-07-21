@@ -551,6 +551,7 @@ the following events::
 
 	KVMI_EVENT_BREAKPOINT
 	KVMI_EVENT_CR
+	KVMI_EVENT_DESCRIPTOR
 	KVMI_EVENT_HYPERCALL
 	KVMI_EVENT_XSETBV
 
@@ -574,6 +575,8 @@ the *KVMI_VM_CONTROL_EVENTS* command.
 * -KVM_EINVAL - the event ID is unknown (use *KVMI_VM_CHECK_EVENT* first)
 * -KVM_EPERM - the access is disallowed (use *KVMI_VM_CHECK_EVENT* first)
 * -KVM_EAGAIN - the selected vCPU can't be introspected yet
+* -KVM_EOPNOTSUPP - the event can't be intercepted in the current setup
+                    (e.g. KVMI_EVENT_DESCRIPTOR with AMD)
 * -KVM_EBUSY - the event can't be intercepted right now
                (e.g. KVMI_EVENT_BREAKPOINT if the #BP event is already intercepted
                 by userspace)
@@ -1211,3 +1214,41 @@ to be changed and the introspection has been enabled for this event
 
 ``kvmi_event``, the extended control register number, the old value and
 the new value are sent to the introspection tool.
+
+8. KVMI_EVENT_DESCRIPTOR
+------------------------
+
+:Architecture: x86
+:Versions: >= 1
+:Actions: CONTINUE, RETRY, CRASH
+:Parameters:
+
+::
+
+	struct kvmi_event;
+	struct kvmi_event_descriptor {
+		__u8 descriptor;
+		__u8 write;
+		__u8 padding[6];
+	};
+
+:Returns:
+
+::
+
+	struct kvmi_vcpu_hdr;
+	struct kvmi_event_reply;
+
+This event is sent when a descriptor table register is accessed and the
+introspection has been enabled for this event (see **KVMI_VCPU_CONTROL_EVENTS**).
+
+``kvmi_event`` and ``kvmi_event_descriptor`` are sent to the introspection tool.
+
+``descriptor`` can be one of::
+
+	KVMI_DESC_IDTR
+	KVMI_DESC_GDTR
+	KVMI_DESC_LDTR
+	KVMI_DESC_TR
+
+``write`` is 1 if the descriptor was written, 0 otherwise.
