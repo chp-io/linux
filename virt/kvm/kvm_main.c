@@ -51,6 +51,7 @@
 #include <linux/io.h>
 #include <linux/lockdep.h>
 #include <linux/kthread.h>
+#include <linux/kvmi_host.h>
 
 #include <asm/processor.h>
 #include <asm/ioctl.h>
@@ -88,6 +89,9 @@ EXPORT_SYMBOL_GPL(halt_poll_ns_grow_start);
 unsigned int halt_poll_ns_shrink;
 module_param(halt_poll_ns_shrink, uint, 0644);
 EXPORT_SYMBOL_GPL(halt_poll_ns_shrink);
+
+static bool enable_introspection;
+module_param_named(introspection, enable_introspection, bool, 0644);
 
 /*
  * Ordering of locks:
@@ -745,6 +749,9 @@ static struct kvm *kvm_create_vm(unsigned long type)
 	if (r)
 		goto out_err;
 
+	if (enable_introspection)
+		kvmi_create_vm(kvm);
+
 	mutex_lock(&kvm_lock);
 	list_add(&kvm->vm_list, &vm_list);
 	mutex_unlock(&kvm_lock);
@@ -797,6 +804,8 @@ static void kvm_destroy_vm(struct kvm *kvm)
 	int i;
 	struct mm_struct *mm = kvm->mm;
 
+	if (enable_introspection)
+		kvmi_destroy_vm(kvm);
 	kvm_uevent_notify_change(KVM_EVENT_DESTROY_VM, kvm);
 	kvm_destroy_vm_debugfs(kvm);
 	kvm_arch_sync_events(kvm);
@@ -4811,6 +4820,11 @@ int kvm_init(void *opaque, unsigned vcpu_size, unsigned vcpu_align,
 	r = kvm_vfio_ops_init();
 	WARN_ON(r);
 
+	if (enable_introspection) {
+		r = kvmi_init();
+		WARN_ON(r);
+	}
+
 	return 0;
 
 out_unreg:
@@ -4835,6 +4849,7 @@ EXPORT_SYMBOL_GPL(kvm_init);
 
 void kvm_exit(void)
 {
+	kvmi_uninit();
 	debugfs_remove_recursive(kvm_debugfs_dir);
 	misc_deregister(&kvm_dev);
 	kmem_cache_destroy(kvm_vcpu_cache);
