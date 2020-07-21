@@ -3847,6 +3847,20 @@ static long kvm_vm_ioctl(struct file *filp,
 		else
 			r = -EPERM;
 		break;
+	case KVM_INTROSPECTION_COMMAND:
+	case KVM_INTROSPECTION_EVENT:
+		r = -EPERM;
+		if (enable_introspection) {
+			struct kvm_introspection_feature feat;
+
+			if (copy_from_user(&feat, argp, sizeof(feat)))
+				r = -EFAULT;
+			else if (ioctl == KVM_INTROSPECTION_EVENT)
+				r = kvmi_ioctl_event(kvm, &feat);
+			else
+				r = kvmi_ioctl_command(kvm, &feat);
+		}
+		break;
 #endif /* CONFIG_KVM_INTROSPECTION */
 	default:
 		r = kvm_arch_vm_ioctl(filp, ioctl, arg);
