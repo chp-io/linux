@@ -48,6 +48,7 @@ enum {
 	KVMI_VM_SET_PAGE_ACCESS = 23,
 
 	KVMI_VCPU_CONTROL_SINGLESTEP = 24,
+	KVMI_VCPU_TRANSLATE_GVA      = 25,
 
 	KVMI_NUM_MESSAGES
 };
@@ -240,6 +241,14 @@ struct kvmi_event_pf {
 struct kvmi_event_singlestep {
 	__u8 failed;
 	__u8 padding[7];
+};
+
+struct kvmi_vcpu_translate_gva {
+	__u64 gva;
+};
+
+struct kvmi_vcpu_translate_gva_reply {
+	__u64 gpa;
 };
 
 #endif /* _UAPI__LINUX_KVMI_H */
