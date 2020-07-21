@@ -98,3 +98,96 @@ int kvmi_arch_cmd_vcpu_get_info(struct kvm_vcpu *vcpu,
 
 	return 0;
 }
+
+int kvmi_arch_check_get_registers_req(const struct kvmi_msg_hdr *msg,
+				const struct kvmi_vcpu_get_registers *req)
+{
+	size_t req_size;
+
+	if (check_add_overflow(sizeof(struct kvmi_vcpu_hdr),
+				struct_size(req, msrs_idx, req->nmsrs),
+				&req_size))
+		return -1;
+
+	if (msg->size < req_size)
+		return -1;
+
+	return 0;
+}
+
+static int kvmi_get_registers(struct kvm_vcpu *vcpu, u32 *mode,
+			      struct kvm_regs *regs,
+			      struct kvm_sregs *sregs,
+			      struct kvm_msrs *msrs)
+{
+	struct kvm_msr_entry *msr = msrs->entries;
+	struct kvm_msr_entry *end = msrs->entries + msrs->nmsrs;
+	struct msr_data m = {.host_initiated = true};
+	int err = 0;
+
+	kvm_arch_vcpu_get_regs(vcpu, regs);
+	kvm_arch_vcpu_get_sregs(vcpu, sregs);
+	*mode = kvmi_vcpu_mode(vcpu, sregs);
+
+	for (; msr < end && !err; msr++) {
+		m.index = msr->index;
+
+		err = kvm_x86_ops.get_msr(vcpu, &m);
+
+		if (!err)
+			msr->data = m.data;
+	}
+
+	return err ? -KVM_EINVAL : 0;
+}
+
+static bool valid_reply_size(size_t rpl_size)
+{
+	size_t msg_size;
+
+	if (check_add_overflow(sizeof(struct kvmi_error_code),
+				rpl_size, &msg_size))
+		return false;
+
+	if (msg_size > KVMI_MSG_SIZE)
+		return false;
+
+	return true;
+}
+
+int kvmi_arch_cmd_vcpu_get_registers(struct kvm_vcpu *vcpu,
+				const struct kvmi_msg_hdr *msg,
+				const struct kvmi_vcpu_get_registers *req,
+				struct kvmi_vcpu_get_registers_reply **dest,
+				size_t *dest_size)
+{
+	struct kvmi_vcpu_get_registers_reply *rpl;
+	size_t rpl_size;
+	int err;
+	u16 k;
+
+	if (req->padding1 || req->padding2)
+		return -KVM_EINVAL;
+
+	rpl_size = struct_size(rpl, msrs.entries, req->nmsrs);
+
+	if (!valid_reply_size(rpl_size))
+		return -KVM_EINVAL;
+
+	rpl = kvmi_msg_alloc();
+	if (!rpl)
+		return -KVM_ENOMEM;
+
+	rpl->msrs.nmsrs = req->nmsrs;
+
+	for (k = 0; k < req->nmsrs; k++)
+		rpl->msrs.entries[k].index = req->msrs_idx[k];
+
+	err = kvmi_get_registers(vcpu, &rpl->mode, &rpl->regs,
+				 &rpl->sregs, &rpl->msrs);
+
+	*dest = rpl;
+	*dest_size = rpl_size;
+
+	return err;
+}
