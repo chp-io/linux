@@ -49,6 +49,7 @@ int kvmi_add_job(struct kvm_vcpu *vcpu,
 void kvmi_run_jobs(struct kvm_vcpu *vcpu);
 void kvmi_post_reply(struct kvm_vcpu *vcpu);
 void kvmi_handle_common_event_actions(struct kvm *kvm, u32 action);
+void kvmi_cmd_vm_control_cleanup(struct kvm_introspection *kvmi, bool enable);
 int kvmi_cmd_vm_control_events(struct kvm_introspection *kvmi,
 				unsigned int event_id, bool enable);
 int kvmi_cmd_vcpu_control_events(struct kvm_vcpu *vcpu,
@@ -68,7 +69,8 @@ int kvmi_cmd_vcpu_set_registers(struct kvm_vcpu *vcpu,
 bool kvmi_arch_vcpu_alloc_interception(struct kvm_vcpu *vcpu);
 void kvmi_arch_vcpu_free_interception(struct kvm_vcpu *vcpu);
 bool kvmi_arch_vcpu_introspected(struct kvm_vcpu *vcpu);
-void kvmi_arch_request_interception_cleanup(struct kvm_vcpu *vcpu);
+void kvmi_arch_request_interception_cleanup(struct kvm_vcpu *vcpu,
+				bool restore_interception);
 bool kvmi_arch_clean_up_interception(struct kvm_vcpu *vcpu);
 int kvmi_arch_cmd_vcpu_get_info(struct kvm_vcpu *vcpu,
 				struct kvmi_vcpu_get_info_reply *rpl);

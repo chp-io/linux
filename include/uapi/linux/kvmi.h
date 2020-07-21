@@ -32,6 +32,8 @@ enum {
 	KVMI_VCPU_SET_REGISTERS  = 12,
 	KVMI_VCPU_GET_CPUID      = 13,
 
+	KVMI_VM_CONTROL_CLEANUP = 14,
+
 	KVMI_NUM_MESSAGES
 };
 
@@ -133,6 +135,13 @@ struct kvmi_vcpu_control_events {
 	__u8 enable;
 	__u8 padding1;
 	__u32 padding2;
+};
+
+struct kvmi_vm_control_cleanup {
+	__u8 enable;
+	__u8 padding1;
+	__u16 padding2;
+	__u32 padding3;
 };
 
 struct kvmi_event {

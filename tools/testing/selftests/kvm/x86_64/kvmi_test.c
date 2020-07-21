@@ -1168,6 +1168,39 @@ static void test_event_breakpoint(struct kvm_vm *vm)
 	disable_vcpu_event(vm, event_id);
 }
 
+static void cmd_vm_control_cleanup(__u8 enable, __u8 padding,
+				   int expected_err)
+{
+	struct {
+		struct kvmi_msg_hdr hdr;
+		struct kvmi_vm_control_cleanup cmd;
+	} req = {};
+	int r;
+
+	req.cmd.enable = enable;
+	req.cmd.padding1 = padding;
+	req.cmd.padding2 = padding;
+	req.cmd.padding3 = padding;
+
+	r = do_command(KVMI_VM_CONTROL_CLEANUP, &req.hdr, sizeof(req),
+			     NULL, 0);
+	TEST_ASSERT(r == expected_err,
+		"KVMI_VM_CONTROL_CLEANUP failed, error %d (%s), expected error %d\n",
+		-r, kvm_strerror(-r), expected_err);
+}
+
+static void test_cmd_vm_control_cleanup(struct kvm_vm *vm)
+{
+	__u8 disable = 0, enable = 1, enable_inval = 2;
+	__u16 padding = 1, no_padding = 0;
+
+	cmd_vm_control_cleanup(enable, padding, -KVM_EINVAL);
+	cmd_vm_control_cleanup(enable_inval, no_padding, -KVM_EINVAL);
+
+	cmd_vm_control_cleanup(enable, no_padding, 0);
+	cmd_vm_control_cleanup(disable, no_padding, 0);
+}
+
 static void test_introspection(struct kvm_vm *vm)
 {
 	srandom(time(0));
@@ -1190,6 +1223,7 @@ static void test_introspection(struct kvm_vm *vm)
 	test_cmd_vcpu_get_cpuid(vm);
 	test_event_hypercall(vm);
 	test_event_breakpoint(vm);
+	test_cmd_vm_control_cleanup(vm);
 
 	unhook_introspection(vm);
 }
