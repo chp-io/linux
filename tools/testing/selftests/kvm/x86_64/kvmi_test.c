@@ -72,6 +72,11 @@ static void set_event_perm(struct kvm_vm *vm, __s32 id, __u32 allow,
 		 "KVM_INTROSPECTION_EVENT");
 }
 
+static void disallow_event(struct kvm_vm *vm, __s32 event_id)
+{
+	set_event_perm(vm, event_id, 0, 0);
+}
+
 static void allow_event(struct kvm_vm *vm, __s32 event_id)
 {
 	set_event_perm(vm, event_id, 1, 0);
@@ -300,13 +305,20 @@ static void cmd_vm_check_event(__u16 id, __u16 padding, int expected_err)
 		-r, kvm_strerror(-r), expected_err);
 }
 
-static void test_cmd_vm_check_event(void)
+static void test_cmd_vm_check_event(struct kvm_vm *vm)
 {
-	__u16 invalid_id = 0xffff;
+	__u16 valid_id = KVMI_EVENT_UNHOOK, invalid_id = 0xffff;
 	__u16 padding = 1, no_padding = 0;
 
 	cmd_vm_check_event(invalid_id, padding, -KVM_EINVAL);
 	cmd_vm_check_event(invalid_id, no_padding, -KVM_ENOENT);
+
+	cmd_vm_check_event(valid_id, no_padding, 0);
+	cmd_vm_check_event(valid_id, padding, -KVM_EINVAL);
+
+	disallow_event(vm, valid_id);
+	cmd_vm_check_event(valid_id, 0, -KVM_EPERM);
+	allow_event(vm, valid_id);
 }
 
 static void test_cmd_vm_get_info(void)
@@ -323,6 +335,52 @@ static void test_cmd_vm_get_info(void)
 	pr_info("vcpu count: %u\n", rpl.vcpu_count);
 }
 
+static void trigger_event_unhook_notification(struct kvm_vm *vm)
+{
+	int r;
+
+	r = ioctl(vm->fd, KVM_INTROSPECTION_PREUNHOOK, NULL);
+	TEST_ASSERT(r == 0,
+		"KVM_INTROSPECTION_PREUNHOOK failed, errno %d (%s)\n",
+		errno, strerror(errno));
+}
+
+static void receive_event(struct kvmi_msg_hdr *hdr, struct kvmi_event *ev,
+			  size_t ev_size, int event_id)
+{
+	size_t to_read = ev_size;
+
+	receive_data(hdr, sizeof(*hdr));
+
+	TEST_ASSERT(hdr->id == KVMI_EVENT,
+		"Unexpected messages id %d, expected %d\n",
+		hdr->id, KVMI_EVENT);
+
+	if (to_read > hdr->size)
+		to_read = hdr->size;
+
+	receive_data(ev, to_read);
+
+	TEST_ASSERT(ev->event == event_id,
+		"Unexpected event %d, expected %d\n",
+		ev->event, event_id);
+
+	TEST_ASSERT(hdr->size == ev_size,
+		"Invalid event size %d, expected %zd bytes\n",
+		hdr->size, ev_size);
+}
+
+static void test_event_unhook(struct kvm_vm *vm)
+{
+	__u16 id = KVMI_EVENT_UNHOOK;
+	struct kvmi_msg_hdr hdr;
+	struct kvmi_event ev;
+
+	trigger_event_unhook_notification(vm);
+
+	receive_event(&hdr, &ev, sizeof(ev), id);
+}
+
 static void test_introspection(struct kvm_vm *vm)
 {
 	setup_socket();
@@ -331,8 +389,9 @@ static void test_introspection(struct kvm_vm *vm)
 	test_cmd_invalid();
 	test_cmd_get_version();
 	test_cmd_vm_check_command(vm);
-	test_cmd_vm_check_event();
+	test_cmd_vm_check_event(vm);
 	test_cmd_vm_get_info();
+	test_event_unhook(vm);
 
 	unhook_introspection(vm);
 }

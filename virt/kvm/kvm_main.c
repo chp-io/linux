@@ -3861,6 +3861,12 @@ static long kvm_vm_ioctl(struct file *filp,
 				r = kvmi_ioctl_command(kvm, &feat);
 		}
 		break;
+	case KVM_INTROSPECTION_PREUNHOOK:
+		if (enable_introspection)
+			r = kvmi_ioctl_preunhook(kvm);
+		else
+			r = -EPERM;
+		break;
 #endif /* CONFIG_KVM_INTROSPECTION */
 	default:
 		r = kvm_arch_vm_ioctl(filp, ioctl, arg);

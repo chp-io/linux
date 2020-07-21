@@ -17,6 +17,8 @@ struct kvm_introspection {
 
 	unsigned long *cmd_allow_mask;
 	unsigned long *event_allow_mask;
+
+	atomic_t ev_seq;
 };
 
 int kvmi_version(void);
@@ -32,6 +34,7 @@ int kvmi_ioctl_command(struct kvm *kvm,
 		       const struct kvm_introspection_feature *feat);
 int kvmi_ioctl_event(struct kvm *kvm,
 		     const struct kvm_introspection_feature *feat);
+int kvmi_ioctl_preunhook(struct kvm *kvm);
 
 #else
 
