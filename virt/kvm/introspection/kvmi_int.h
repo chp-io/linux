@@ -108,5 +108,8 @@ void kvmi_arch_inject_exception(struct kvm_vcpu *vcpu);
 int kvmi_arch_cmd_vcpu_get_xcr(struct kvm_vcpu *vcpu,
 			       const struct kvmi_vcpu_get_xcr *req,
 			       struct kvmi_vcpu_get_xcr_reply *rpl);
+int kvmi_arch_cmd_vcpu_get_xsave(struct kvm_vcpu *vcpu,
+				 struct kvmi_vcpu_get_xsave_reply **dest,
+				 size_t *dest_size);
 
 #endif

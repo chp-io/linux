@@ -737,3 +737,27 @@ int kvmi_arch_cmd_vcpu_get_xcr(struct kvm_vcpu *vcpu,
 	rpl->value = vcpu->arch.xcr0;
 	return 0;
 }
+
+int kvmi_arch_cmd_vcpu_get_xsave(struct kvm_vcpu *vcpu,
+				 struct kvmi_vcpu_get_xsave_reply **dest,
+				 size_t *dest_size)
+{
+	struct kvmi_vcpu_get_xsave_reply *rpl = NULL;
+	size_t rpl_size = sizeof(*rpl) + sizeof(struct kvm_xsave);
+	struct kvm_xsave *area;
+
+	if (!valid_reply_size(rpl_size))
+		return -KVM_EINVAL;
+
+	rpl = kvmi_msg_alloc();
+	if (!rpl)
+		return -KVM_ENOMEM;
+
+	area = (struct kvm_xsave *) &rpl->region[0];
+	kvm_vcpu_ioctl_x86_get_xsave(vcpu, area);
+
+	*dest = rpl;
+	*dest_size = rpl_size;
+
+	return 0;
+}
