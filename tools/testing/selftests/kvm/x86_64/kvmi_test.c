@@ -34,6 +34,12 @@ static vm_paddr_t test_gpa;
 static uint8_t test_write_pattern;
 static int page_size;
 
+struct vcpu_reply {
+	struct kvmi_msg_hdr hdr;
+	struct kvmi_vcpu_hdr vcpu_hdr;
+	struct kvmi_event_reply reply;
+};
+
 struct vcpu_worker_data {
 	struct kvm_vm *vm;
 	int vcpu_id;
@@ -772,14 +778,54 @@ static void pause_vcpu(void)
 	cmd_vcpu_pause(1, 0, 0);
 }
 
+static void reply_to_event(struct kvmi_msg_hdr *ev_hdr, struct kvmi_event *ev,
+			   __u8 action, struct vcpu_reply *rpl, size_t rpl_size)
+{
+	ssize_t r;
+
+	rpl->hdr.id = ev_hdr->id;
+	rpl->hdr.seq = ev_hdr->seq;
+	rpl->hdr.size = rpl_size - sizeof(rpl->hdr);
+
+	rpl->vcpu_hdr.vcpu = ev->vcpu;
+
+	rpl->reply.action = action;
+	rpl->reply.event = ev->event;
+
+	r = send(Userspace_socket, rpl, rpl_size, 0);
+	TEST_ASSERT(r == rpl_size,
+		"send() failed, sending %zd, result %zd, errno %d (%s)\n",
+		rpl_size, r, errno, strerror(errno));
+}
+
+static void discard_pause_event(struct kvm_vm *vm)
+{
+	struct vcpu_worker_data data = {.vm = vm, .vcpu_id = VCPU_ID};
+	struct vcpu_reply rpl = {};
+	struct kvmi_msg_hdr hdr;
+	pthread_t vcpu_thread;
+	struct kvmi_event ev;
+
+	vcpu_thread = start_vcpu_worker(&data);
+
+	receive_event(&hdr, &ev, sizeof(ev), KVMI_EVENT_PAUSE_VCPU);
+
+	reply_to_event(&hdr, &ev, KVMI_EVENT_ACTION_CONTINUE,
+			&rpl, sizeof(rpl));
+
+	stop_vcpu_worker(vcpu_thread, &data);
+}
+
 static void test_pause(struct kvm_vm *vm)
 {
 	__u8 no_wait = 0, wait = 1, wait_inval = 2;
 	__u8 padding = 1, no_padding = 0;
 
 	pause_vcpu();
+	discard_pause_event(vm);
 
 	cmd_vcpu_pause(wait, no_padding, 0);
+	discard_pause_event(vm);
 	cmd_vcpu_pause(wait_inval, no_padding, -KVM_EINVAL);
 	cmd_vcpu_pause(no_wait, padding, -KVM_EINVAL);
 

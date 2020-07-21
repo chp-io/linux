@@ -563,6 +563,25 @@ On x86 the structure looks like this::
 
 It contains information about the vCPU state at the time of the event.
 
+An event reply begins with two common structures::
+
+	struct kvmi_vcpu_hdr;
+	struct kvmi_event_reply {
+		__u8 action;
+		__u8 event;
+		__u16 padding1;
+		__u32 padding2;
+	};
+
+All events accept the KVMI_EVENT_ACTION_CRASH action, which stops the
+guest ungracefully, but as soon as possible.
+
+Most of the events accept the KVMI_EVENT_ACTION_CONTINUE action, which
+lets the instruction that caused the event to continue.
+
+Some of the events accept the KVMI_EVENT_ACTION_RETRY action, to continue
+by re-entering in guest.
+
 Specific event data can follow these common structures.
 
 1. KVMI_EVENT_UNHOOK
@@ -604,7 +623,8 @@ operation can proceed).
 	struct kvmi_vcpu_hdr;
 	struct kvmi_event_reply;
 
-This event is sent in response to a *KVMI_VCPU_PAUSE* command.
+This event is sent in response to a *KVMI_VCPU_PAUSE* command and
+cannot be controlled with *KVMI_VCPU_CONTROL_EVENTS*.
 Because it has a low priority, it will be sent after any other vCPU
 introspection event and when no other vCPU introspection command is
 queued.
