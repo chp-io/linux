@@ -64,6 +64,9 @@ struct kvm_introspection {
 	atomic_t ev_seq;
 
 	bool cleanup_on_unhook;
+
+	struct radix_tree_root access_tree;
+	rwlock_t access_tree_lock;
 };
 
 int kvmi_version(void);

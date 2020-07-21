@@ -334,6 +334,17 @@ static int handle_vm_get_max_gfn(struct kvm_introspection *kvmi,
 	return kvmi_msg_vm_reply(kvmi, msg, 0, &rpl, sizeof(rpl));
 }
 
+static int handle_vm_set_page_access(struct kvm_introspection *kvmi,
+				     const struct kvmi_msg_hdr *msg,
+				     const void *req)
+{
+	int ec;
+
+	ec = kvmi_cmd_set_page_access(kvmi, msg, req);
+
+	return kvmi_msg_vm_reply(kvmi, msg, ec, NULL, 0);
+}
+
 /*
  * These commands are executed by the receiving thread.
  */
@@ -348,6 +359,7 @@ static int(*const msg_vm[])(struct kvm_introspection *,
 	[KVMI_VM_GET_INFO]        = handle_vm_get_info,
 	[KVMI_VM_GET_MAX_GFN]     = handle_vm_get_max_gfn,
 	[KVMI_VM_READ_PHYSICAL]   = handle_vm_read_physical,
+	[KVMI_VM_SET_PAGE_ACCESS] = handle_vm_set_page_access,
 	[KVMI_VM_WRITE_PHYSICAL]  = handle_vm_write_physical,
 };
 
