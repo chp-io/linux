@@ -761,3 +761,26 @@ int kvmi_arch_cmd_vcpu_get_xsave(struct kvm_vcpu *vcpu,
 
 	return 0;
 }
+
+int kvmi_arch_cmd_vcpu_set_xsave(struct kvm_vcpu *vcpu,
+				 const struct kvmi_vcpu_set_xsave *req,
+				 size_t req_size)
+{
+	struct kvm_xsave *area;
+	size_t dest_size = sizeof(*area);
+	int err;
+
+	if (req_size > dest_size)
+		return -KVM_EINVAL;
+
+	area = kzalloc(dest_size, GFP_KERNEL);
+	if (!area)
+		return -KVM_ENOMEM;
+
+	memcpy(area, req, min(req_size, dest_size));
+
+	err = kvm_vcpu_ioctl_x86_set_xsave(vcpu, area);
+	kfree(area);
+
+	return err ? -KVM_EINVAL : 0;
+}

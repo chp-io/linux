@@ -553,6 +553,22 @@ static int handle_vcpu_get_xsave(const struct kvmi_vcpu_msg_job *job,
 	return err;
 }
 
+static int handle_vcpu_set_xsave(const struct kvmi_vcpu_msg_job *job,
+				 const struct kvmi_msg_hdr *msg,
+				 const void *req)
+{
+	size_t msg_size = msg->size, xsave_size;
+	int ec;
+
+	if (check_sub_overflow(msg_size, sizeof(struct kvmi_vcpu_hdr),
+				&xsave_size))
+		return -EINVAL;
+
+	ec = kvmi_arch_cmd_vcpu_set_xsave(job->vcpu, req, xsave_size);
+
+	return kvmi_msg_vcpu_reply(job, msg, ec, NULL, 0);
+}
+
 /*
  * These functions are executed from the vCPU thread. The receiving thread
  * passes the messages using a newly allocated 'struct kvmi_vcpu_msg_job'
@@ -571,6 +587,7 @@ static int(*const msg_vcpu[])(const struct kvmi_vcpu_msg_job *,
 	[KVMI_VCPU_GET_XSAVE]        = handle_vcpu_get_xsave,
 	[KVMI_VCPU_INJECT_EXCEPTION] = handle_vcpu_inject_exception,
 	[KVMI_VCPU_SET_REGISTERS]    = handle_vcpu_set_registers,
+	[KVMI_VCPU_SET_XSAVE]        = handle_vcpu_set_xsave,
 };
 
 static bool is_vcpu_command(u16 id)

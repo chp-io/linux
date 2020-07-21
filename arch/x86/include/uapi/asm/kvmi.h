@@ -103,4 +103,8 @@ struct kvmi_vcpu_get_xsave_reply {
 	__u32 region[0];
 };
 
+struct kvmi_vcpu_set_xsave {
+	__u32 region[0];
+};
+
 #endif /* _UAPI_ASM_X86_KVMI_H */

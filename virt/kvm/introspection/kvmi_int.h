@@ -111,5 +111,8 @@ int kvmi_arch_cmd_vcpu_get_xcr(struct kvm_vcpu *vcpu,
 int kvmi_arch_cmd_vcpu_get_xsave(struct kvm_vcpu *vcpu,
 				 struct kvmi_vcpu_get_xsave_reply **dest,
 				 size_t *dest_size);
+int kvmi_arch_cmd_vcpu_set_xsave(struct kvm_vcpu *vcpu,
+				 const struct kvmi_vcpu_set_xsave *req,
+				 size_t req_size);
 
 #endif

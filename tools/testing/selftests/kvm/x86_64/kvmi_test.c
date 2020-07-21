@@ -1551,25 +1551,43 @@ static void test_cmd_vcpu_get_xcr(struct kvm_vm *vm)
 	cmd_vcpu_get_xcr(vm, xcr1, &value, no_padding, -KVM_EINVAL);
 }
 
-static void cmd_vcpu_get_xsave(struct kvm_vm *vm)
+static void cmd_vcpu_get_xsave(struct kvm_vm *vm, struct kvm_xsave *rpl)
 {
 	struct {
 		struct kvmi_msg_hdr hdr;
 		struct kvmi_vcpu_hdr vcpu_hdr;
 	} req = {};
-	struct kvm_xsave rpl;
 	int r;
 
 	r = do_vcpu0_command(vm, KVMI_VCPU_GET_XSAVE, &req.hdr, sizeof(req),
-			     &rpl, sizeof(rpl));
+			     rpl, sizeof(*rpl));
 	TEST_ASSERT(r == 0,
 		    "KVMI_VCPU_GET_XSAVE failed with error %d (%s)\n",
 		    -r, kvm_strerror(-r));
 }
 
-static void test_cmd_vcpu_get_xsave(struct kvm_vm *vm)
+static void cmd_vcpu_set_xsave(struct kvm_vm *vm, struct kvm_xsave *rpl)
+{
+	struct {
+		struct kvmi_msg_hdr hdr;
+		struct kvmi_vcpu_hdr vcpu_hdr;
+		struct kvm_xsave xsave;
+	} req = {};
+	int r;
+
+	memcpy(&req.xsave, rpl, sizeof(*rpl));
+
+	r = do_vcpu0_command(vm, KVMI_VCPU_SET_XSAVE, &req.hdr, sizeof(req),
+			     NULL, 0);
+	TEST_ASSERT(r == 0,
+		    "KVMI_VCPU_SET_XSAVE failed with error %d (%s)\n",
+		    -r, kvm_strerror(-r));
+}
+
+static void test_cmd_vcpu_xsave(struct kvm_vm *vm)
 {
 	struct kvm_cpuid_entry2 *entry;
+	struct kvm_xsave xsave;
 
 	entry = kvm_get_supported_cpuid_entry(1);
 	if (!(entry->ecx & X86_FEATURE_XSAVE)) {
@@ -1577,7 +1595,8 @@ static void test_cmd_vcpu_get_xsave(struct kvm_vm *vm)
 		return;
 	}
 
-	cmd_vcpu_get_xsave(vm);
+	cmd_vcpu_get_xsave(vm, &xsave);
+	cmd_vcpu_set_xsave(vm, &xsave);
 }
 
 static void test_introspection(struct kvm_vm *vm)
@@ -1608,7 +1627,7 @@ static void test_introspection(struct kvm_vm *vm)
 	test_cmd_vm_get_max_gfn();
 	test_event_xsetbv(vm);
 	test_cmd_vcpu_get_xcr(vm);
-	test_cmd_vcpu_get_xsave(vm);
+	test_cmd_vcpu_xsave(vm);
 
 	unhook_introspection(vm);
 }
