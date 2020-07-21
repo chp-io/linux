@@ -45,6 +45,8 @@ struct vcpu_worker_data {
 	int vcpu_id;
 	int test_id;
 	bool stop;
+	bool shutdown;
+	bool restart_on_shutdown;
 };
 
 enum {
@@ -687,10 +689,18 @@ static void *vcpu_worker(void *data)
 
 		vcpu_run(ctx->vm, ctx->vcpu_id);
 
-		TEST_ASSERT(run->exit_reason == KVM_EXIT_IO,
+		TEST_ASSERT(run->exit_reason == KVM_EXIT_IO
+			|| (run->exit_reason == KVM_EXIT_SHUTDOWN
+				&& ctx->shutdown),
 			"vcpu_run() failed, test_id %d, exit reason %u (%s)\n",
 			ctx->test_id, run->exit_reason,
 			exit_reason_str(run->exit_reason));
+
+		if (run->exit_reason == KVM_EXIT_SHUTDOWN) {
+			if (ctx->restart_on_shutdown)
+				continue;
+			break;
+		}
 
 		TEST_ASSERT(get_ucall(ctx->vm, ctx->vcpu_id, &uc),
 			"No guest request\n");
@@ -1308,6 +1318,108 @@ static void test_cmd_vcpu_control_cr(struct kvm_vm *vm)
 	test_invalid_vcpu_control_cr(vm);
 }
 
+static void __inject_exception(int nr)
+{
+	struct {
+		struct kvmi_msg_hdr hdr;
+		struct kvmi_vcpu_hdr vcpu_hdr;
+		struct kvmi_vcpu_inject_exception cmd;
+	} req = {};
+	int r;
+
+	req.cmd.nr = nr;
+
+	r = __do_vcpu0_command(KVMI_VCPU_INJECT_EXCEPTION,
+			       &req.hdr, sizeof(req), NULL, 0);
+	TEST_ASSERT(r == 0,
+		"KVMI_VCPU_INJECT_EXCEPTION failed, error %d(%s)\n",
+		-r, kvm_strerror(-r));
+}
+
+static void receive_exception_event(int nr)
+{
+	struct kvmi_msg_hdr hdr;
+	struct {
+		struct kvmi_event common;
+		struct kvmi_event_trap trap;
+	} ev;
+	struct vcpu_reply rpl = {};
+
+	receive_event(&hdr, &ev.common, sizeof(ev), KVMI_EVENT_TRAP);
+
+	pr_info("Exception event: vector %u, error_code 0x%x, address 0x%llx\n",
+		ev.trap.nr, ev.trap.error_code, ev.trap.address);
+
+	TEST_ASSERT(ev.trap.nr == nr,
+		"Injected exception %u instead of %u\n",
+		ev.trap.nr, nr);
+
+	reply_to_event(&hdr, &ev.common, KVMI_EVENT_ACTION_CONTINUE,
+			&rpl, sizeof(rpl));
+}
+
+static void test_succeded_ud_injection(void)
+{
+	__u8 ud_vector = 6;
+
+	__inject_exception(ud_vector);
+
+	receive_exception_event(ud_vector);
+}
+
+static void test_failed_ud_injection(struct kvm_vm *vm,
+				     struct vcpu_worker_data *data)
+{
+	struct kvmi_msg_hdr hdr;
+	struct {
+		struct kvmi_event common;
+		struct kvmi_event_breakpoint bp;
+	} ev;
+	struct vcpu_reply rpl = {};
+	__u8 ud_vector = 6, bp_vector = 3;
+
+	WRITE_ONCE(data->test_id, GUEST_TEST_BP);
+
+	receive_event(&hdr, &ev.common, sizeof(ev), KVMI_EVENT_BREAKPOINT);
+
+	/* skip the breakpoint instruction, next time guest_bp_test() runs */
+	ev.common.arch.regs.rip += ev.bp.insn_len;
+	__set_registers(vm, &ev.common.arch.regs);
+
+	__inject_exception(ud_vector);
+
+	/* reinject the #BP exception because of the continue action */
+	reply_to_event(&hdr, &ev.common, KVMI_EVENT_ACTION_CONTINUE,
+			&rpl, sizeof(rpl));
+
+	receive_exception_event(bp_vector);
+}
+
+static void test_cmd_vcpu_inject_exception(struct kvm_vm *vm)
+{
+	struct vcpu_worker_data data = {
+		.vm = vm,
+		.vcpu_id = VCPU_ID,
+		.shutdown = true,
+		.restart_on_shutdown = true,
+	};
+	pthread_t vcpu_thread;
+
+	if (!is_intel_cpu()) {
+		print_skip("TODO: %s() - make it work with AMD", __func__);
+		return;
+	}
+
+	enable_vcpu_event(vm, KVMI_EVENT_BREAKPOINT);
+	vcpu_thread = start_vcpu_worker(&data);
+
+	test_succeded_ud_injection();
+	test_failed_ud_injection(vm, &data);
+
+	stop_vcpu_worker(vcpu_thread, &data);
+	disable_vcpu_event(vm, KVMI_EVENT_BREAKPOINT);
+}
+
 static void test_introspection(struct kvm_vm *vm)
 {
 	srandom(time(0));
@@ -1332,6 +1444,7 @@ static void test_introspection(struct kvm_vm *vm)
 	test_event_breakpoint(vm);
 	test_cmd_vm_control_cleanup(vm);
 	test_cmd_vcpu_control_cr(vm);
+	test_cmd_vcpu_inject_exception(vm);
 
 	unhook_introspection(vm);
 }

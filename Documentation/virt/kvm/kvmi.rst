@@ -561,6 +561,7 @@ because these are sent as a result of certain commands (but they can be
 disallowed by the device manager) ::
 
 	KVMI_EVENT_PAUSE_VCPU
+	KVMI_EVENT_TRAP
 
 The VM events (e.g. *KVMI_EVENT_UNHOOK*) are controlled with
 the *KVMI_VM_CONTROL_EVENTS* command.
@@ -748,6 +749,45 @@ ID set.
 * -KVM_EINVAL - the specified control register is not CR0, CR3 or CR4
 * -KVM_EINVAL - the padding is not zero
 * -KVM_EAGAIN - the selected vCPU can't be introspected yet
+
+16. KVMI_VCPU_INJECT_EXCEPTION
+------------------------------
+
+:Architectures: all
+:Versions: >= 1
+:Parameters:
+
+::
+
+	struct kvmi_vcpu_hdr;
+	struct kvmi_vcpu_inject_exception {
+		__u8 nr;
+		__u8 padding1;
+		__u16 padding2;
+		__u32 error_code;
+		__u64 address;
+	};
+
+:Returns:
+
+::
+
+	struct kvmi_error_code
+
+Injects a vCPU exception with or without an error code. In case of page fault
+exception, the guest virtual address has to be specified.
+
+The *KVMI_EVENT_TRAP* event will be sent with the effective injected
+exception.
+
+:Errors:
+
+* -KVM_EPERM  - the *KVMI_EVENT_TRAP* event is disallowed
+* -KVM_EINVAL - the selected vCPU is invalid
+* -KVM_EINVAL - the padding is not zero
+* -KVM_EAGAIN - the selected vCPU can't be introspected yet
+* -KVM_EBUSY - another *KVMI_VCPU_INJECT_EXCEPTION*-*KVMI_EVENT_TRAP* pair
+               is in progress
 
 Events
 ======
@@ -960,3 +1000,37 @@ register (see **KVMI_VCPU_CONTROL_EVENTS**).
 
 ``kvmi_event``, the control register number, the old value and the new value
 are sent to the introspection tool. The *CONTINUE* action will set the ``new_val``.
+
+6. KVMI_EVENT_TRAP
+------------------
+
+:Architectures: all
+:Versions: >= 1
+:Actions: CONTINUE, CRASH
+:Parameters:
+
+::
+
+	struct kvmi_event;
+	struct kvmi_event_trap {
+		__u8 nr;
+		__u8 padding1;
+		__u16 padding2;
+		__u32 error_code;
+		__u64 address;
+	};
+
+:Returns:
+
+::
+
+	struct kvmi_vcpu_hdr;
+	struct kvmi_event_reply;
+
+This event is sent if a previous *KVMI_VCPU_INJECT_EXCEPTION* command
+took place. Because it has a high priority, it will be sent before any
+other vCPU introspection event.
+
+``kvmi_event``, exception/interrupt number, exception code
+(``error_code``) and address are sent to the introspection tool,
+which should check if its exception has been injected or overridden.

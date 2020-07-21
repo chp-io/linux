@@ -492,6 +492,25 @@ static int handle_vcpu_control_cr(const struct kvmi_vcpu_msg_job *job,
 	return kvmi_msg_vcpu_reply(job, msg, ec, NULL, 0);
 }
 
+static int handle_vcpu_inject_exception(const struct kvmi_vcpu_msg_job *job,
+					const struct kvmi_msg_hdr *msg,
+					const void *_req)
+{
+	const struct kvmi_vcpu_inject_exception *req = _req;
+	int ec;
+
+	if (!is_event_allowed(KVMI(job->vcpu->kvm), KVMI_EVENT_TRAP))
+		ec = -KVM_EPERM;
+	else if (req->padding1 || req->padding2)
+		ec = -KVM_EINVAL;
+	else
+		ec = kvmi_arch_cmd_vcpu_inject_exception(job->vcpu, req->nr,
+							 req->error_code,
+							 req->address);
+
+	return kvmi_msg_vcpu_reply(job, msg, ec, NULL, 0);
+}
+
 /*
  * These functions are executed from the vCPU thread. The receiving thread
  * passes the messages using a newly allocated 'struct kvmi_vcpu_msg_job'
@@ -500,13 +519,14 @@ static int handle_vcpu_control_cr(const struct kvmi_vcpu_msg_job *job,
  */
 static int(*const msg_vcpu[])(const struct kvmi_vcpu_msg_job *,
 			      const struct kvmi_msg_hdr *, const void *) = {
-	[KVMI_EVENT]               = handle_vcpu_event_reply,
-	[KVMI_VCPU_CONTROL_CR]     = handle_vcpu_control_cr,
-	[KVMI_VCPU_CONTROL_EVENTS] = handle_vcpu_control_events,
-	[KVMI_VCPU_GET_CPUID]      = handle_vcpu_get_cpuid,
-	[KVMI_VCPU_GET_INFO]       = handle_vcpu_get_info,
-	[KVMI_VCPU_GET_REGISTERS]  = handle_vcpu_get_registers,
-	[KVMI_VCPU_SET_REGISTERS]  = handle_vcpu_set_registers,
+	[KVMI_EVENT]                 = handle_vcpu_event_reply,
+	[KVMI_VCPU_CONTROL_CR]       = handle_vcpu_control_cr,
+	[KVMI_VCPU_CONTROL_EVENTS]   = handle_vcpu_control_events,
+	[KVMI_VCPU_GET_CPUID]        = handle_vcpu_get_cpuid,
+	[KVMI_VCPU_GET_INFO]         = handle_vcpu_get_info,
+	[KVMI_VCPU_GET_REGISTERS]    = handle_vcpu_get_registers,
+	[KVMI_VCPU_INJECT_EXCEPTION] = handle_vcpu_inject_exception,
+	[KVMI_VCPU_SET_REGISTERS]    = handle_vcpu_set_registers,
 };
 
 static bool is_vcpu_command(u16 id)
@@ -770,9 +790,9 @@ static void kvmi_setup_vcpu_reply(struct kvm_vcpu_introspection *vcpui,
 	vcpui->waiting_for_reply = true;
 }
 
-int kvmi_send_event(struct kvm_vcpu *vcpu, u32 ev_id,
-		    void *ev, size_t ev_size,
-		    void *rpl, size_t rpl_size, int *action)
+int __kvmi_send_event(struct kvm_vcpu *vcpu, u32 ev_id,
+		      void *ev, size_t ev_size,
+		      void *rpl, size_t rpl_size, int *action)
 {
 	struct kvmi_msg_hdr hdr;
 	struct kvmi_event common;
@@ -810,6 +830,16 @@ out:
 	if (err)
 		kvmi_sock_shutdown(kvmi);
 	return err;
+}
+
+int kvmi_send_event(struct kvm_vcpu *vcpu, u32 ev_id,
+		    void *ev, size_t ev_size,
+		    void *rpl, size_t rpl_size, int *action)
+{
+	kvmi_send_pending_event(vcpu);
+
+	return __kvmi_send_event(vcpu, ev_id, ev, ev_size,
+				 rpl, rpl_size, action);
 }
 
 u32 kvmi_msg_send_vcpu_pause(struct kvm_vcpu *vcpu)

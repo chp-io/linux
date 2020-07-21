@@ -569,3 +569,106 @@ bool kvmi_cr3_intercepted(struct kvm_vcpu *vcpu)
 	return ret;
 }
 EXPORT_SYMBOL(kvmi_cr3_intercepted);
+
+int kvmi_arch_cmd_vcpu_inject_exception(struct kvm_vcpu *vcpu, u8 vector,
+					u32 error_code, u64 address)
+{
+	struct kvm_vcpu_introspection *vcpui = VCPUI(vcpu);
+	bool has_error;
+
+	if (vcpui->exception.pending || vcpui->exception.send_event)
+		return -KVM_EBUSY;
+
+	vcpui->exception.pending = true;
+
+	has_error = x86_exception_has_error_code(vector);
+
+	vcpui->exception.nr = vector;
+	vcpui->exception.error_code = has_error ? error_code : 0;
+	vcpui->exception.error_code_valid = has_error;
+	vcpui->exception.address = address;
+
+	return 0;
+}
+
+static void kvmi_arch_queue_exception(struct kvm_vcpu *vcpu)
+{
+	struct kvm_vcpu_introspection *vcpui = VCPUI(vcpu);
+	struct x86_exception e = {
+		.vector = vcpui->exception.nr,
+		.error_code_valid = vcpui->exception.error_code_valid,
+		.error_code = vcpui->exception.error_code,
+		.address = vcpui->exception.address,
+	};
+
+	if (e.vector == PF_VECTOR)
+		kvm_inject_page_fault(vcpu, &e);
+	else if (e.error_code_valid)
+		kvm_queue_exception_e(vcpu, e.vector, e.error_code);
+	else
+		kvm_queue_exception(vcpu, e.vector);
+}
+
+static void kvmi_arch_save_injected_event(struct kvm_vcpu *vcpu)
+{
+	struct kvm_vcpu_introspection *vcpui = VCPUI(vcpu);
+
+	vcpui->exception.error_code = 0;
+	vcpui->exception.error_code_valid = false;
+
+	vcpui->exception.address = vcpu->arch.cr2;
+	if (vcpu->arch.exception.injected) {
+		vcpui->exception.nr = vcpu->arch.exception.nr;
+		vcpui->exception.error_code_valid =
+			x86_exception_has_error_code(vcpu->arch.exception.nr);
+		vcpui->exception.error_code = vcpu->arch.exception.error_code;
+	} else if (vcpu->arch.interrupt.injected) {
+		vcpui->exception.nr = vcpu->arch.interrupt.nr;
+	}
+}
+
+void kvmi_arch_inject_exception(struct kvm_vcpu *vcpu)
+{
+	if (!kvm_event_needs_reinjection(vcpu)) {
+		kvmi_arch_queue_exception(vcpu);
+		kvm_inject_pending_exception(vcpu);
+	}
+
+	kvmi_arch_save_injected_event(vcpu);
+}
+
+static u32 kvmi_send_trap(struct kvm_vcpu *vcpu, u8 nr,
+			  u32 error_code, u64 addr)
+{
+	struct kvmi_event_trap e;
+	int err, action;
+
+	memset(&e, 0, sizeof(e));
+	e.nr = nr;
+	e.error_code = error_code;
+	e.address = addr;
+
+	err = __kvmi_send_event(vcpu, KVMI_EVENT_TRAP, &e, sizeof(e),
+				NULL, 0, &action);
+	if (err)
+		return KVMI_EVENT_ACTION_CONTINUE;
+
+	return action;
+}
+
+void kvmi_arch_send_trap_event(struct kvm_vcpu *vcpu)
+{
+	struct kvm_vcpu_introspection *vcpui = VCPUI(vcpu);
+	u32 action;
+
+	action = kvmi_send_trap(vcpu, vcpui->exception.nr,
+				vcpui->exception.error_code,
+				vcpui->exception.address);
+
+	switch (action) {
+	case KVMI_EVENT_ACTION_CONTINUE:
+		break;
+	default:
+		kvmi_handle_common_event_actions(vcpu->kvm, action);
+	}
+}

@@ -34,7 +34,8 @@ enum {
 
 	KVMI_VM_CONTROL_CLEANUP = 14,
 
-	KVMI_VCPU_CONTROL_CR = 15,
+	KVMI_VCPU_CONTROL_CR       = 15,
+	KVMI_VCPU_INJECT_EXCEPTION = 16,
 
 	KVMI_NUM_MESSAGES
 };
@@ -45,6 +46,7 @@ enum {
 	KVMI_EVENT_HYPERCALL  = 2,
 	KVMI_EVENT_BREAKPOINT = 3,
 	KVMI_EVENT_CR         = 4,
+	KVMI_EVENT_TRAP       = 5,
 
 	KVMI_NUM_EVENTS
 };
@@ -160,6 +162,22 @@ struct kvmi_event_reply {
 	__u8 event;
 	__u16 padding1;
 	__u32 padding2;
+};
+
+struct kvmi_event_trap {
+	__u8 nr;
+	__u8 padding1;
+	__u16 padding2;
+	__u32 error_code;
+	__u64 address;
+};
+
+struct kvmi_vcpu_inject_exception {
+	__u8 nr;
+	__u8 padding1;
+	__u16 padding2;
+	__u32 error_code;
+	__u64 address;
 };
 
 #endif /* _UAPI__LINUX_KVMI_H */

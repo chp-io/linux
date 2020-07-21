@@ -34,6 +34,9 @@ bool kvmi_msg_process(struct kvm_introspection *kvmi);
 int kvmi_send_event(struct kvm_vcpu *vcpu, u32 ev_id,
 		    void *ev, size_t ev_size,
 		    void *rpl, size_t rpl_size, int *action);
+int __kvmi_send_event(struct kvm_vcpu *vcpu, u32 ev_id,
+		      void *ev, size_t ev_size,
+		      void *rpl, size_t rpl_size, int *action);
 int kvmi_msg_send_unhook(struct kvm_introspection *kvmi);
 u32 kvmi_msg_send_vcpu_pause(struct kvm_vcpu *vcpu);
 u32 kvmi_msg_send_hypercall(struct kvm_vcpu *vcpu);
@@ -55,6 +58,7 @@ void kvmi_handle_common_event_actions(struct kvm *kvm, u32 action);
 void kvmi_cmd_vm_control_cleanup(struct kvm_introspection *kvmi, bool enable);
 struct kvm_introspection * __must_check kvmi_get(struct kvm *kvm);
 void kvmi_put(struct kvm *kvm);
+void kvmi_send_pending_event(struct kvm_vcpu *vcpu);
 int kvmi_cmd_vm_control_events(struct kvm_introspection *kvmi,
 				unsigned int event_id, bool enable);
 int kvmi_cmd_vcpu_control_events(struct kvm_vcpu *vcpu,
@@ -97,5 +101,9 @@ int kvmi_arch_cmd_control_intercept(struct kvm_vcpu *vcpu,
 				    unsigned int event_id, bool enable);
 int kvmi_arch_cmd_vcpu_control_cr(struct kvm_vcpu *vcpu,
 				  const struct kvmi_vcpu_control_cr *req);
+int kvmi_arch_cmd_vcpu_inject_exception(struct kvm_vcpu *vcpu, u8 vector,
+					u32 error_code, u64 address);
+void kvmi_arch_send_trap_event(struct kvm_vcpu *vcpu);
+void kvmi_arch_inject_exception(struct kvm_vcpu *vcpu);
 
 #endif
