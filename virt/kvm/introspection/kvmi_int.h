@@ -30,5 +30,6 @@ bool kvmi_msg_process(struct kvm_introspection *kvmi);
 void *kvmi_msg_alloc(void);
 void kvmi_msg_free(void *addr);
 bool kvmi_is_command_allowed(struct kvm_introspection *kvmi, u16 id);
+bool kvmi_is_known_event(u8 id);
 
 #endif

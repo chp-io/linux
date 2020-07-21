@@ -99,6 +99,8 @@ static void hook_introspection(struct kvm_vm *vm)
 	do_hook_ioctl(vm, Kvm_socket, no_padding, EEXIST);
 
 	set_command_perm(vm, KVMI_GET_VERSION, disallow, EPERM);
+	set_command_perm(vm, KVMI_VM_CHECK_COMMAND, disallow, EPERM);
+	set_command_perm(vm, KVMI_VM_CHECK_EVENT, disallow, EPERM);
 	set_command_perm(vm, all_IDs, allow_inval, EINVAL);
 	set_command_perm(vm, all_IDs, disallow, 0);
 	set_command_perm(vm, all_IDs, allow, 0);
@@ -238,6 +240,61 @@ static void test_cmd_get_version(void)
 	pr_info("KVMI version: %u\n", rpl.version);
 }
 
+static void cmd_vm_check_command(__u16 id, __u16 padding, int expected_err)
+{
+	struct {
+		struct kvmi_msg_hdr hdr;
+		struct kvmi_vm_check_command cmd;
+	} req = {};
+	int r;
+
+	req.cmd.id = id;
+	req.cmd.padding1 = padding;
+	req.cmd.padding2 = padding;
+
+	r = do_command(KVMI_VM_CHECK_COMMAND, &req.hdr, sizeof(req), NULL, 0);
+	TEST_ASSERT(r == expected_err,
+		"KVMI_VM_CHECK_COMMAND failed, error %d (%s), expected %d\n",
+		-r, kvm_strerror(-r), expected_err);
+}
+
+static void test_cmd_vm_check_command(void)
+{
+	__u16 valid_id = KVMI_GET_VERSION, invalid_id = 0xffff;
+	__u16 padding = 1, no_padding = 0;
+
+	cmd_vm_check_command(valid_id, no_padding, 0);
+	cmd_vm_check_command(valid_id, padding, -KVM_EINVAL);
+	cmd_vm_check_command(invalid_id, no_padding, -KVM_ENOENT);
+}
+
+static void cmd_vm_check_event(__u16 id, __u16 padding, int expected_err)
+{
+	struct {
+		struct kvmi_msg_hdr hdr;
+		struct kvmi_vm_check_event cmd;
+	} req = {};
+	int r;
+
+	req.cmd.id = id;
+	req.cmd.padding1 = padding;
+	req.cmd.padding2 = padding;
+
+	r = do_command(KVMI_VM_CHECK_EVENT, &req.hdr, sizeof(req), NULL, 0);
+	TEST_ASSERT(r == expected_err,
+		"KVMI_VM_CHECK_EVENT failed, error %d (%s), expected %d\n",
+		-r, kvm_strerror(-r), expected_err);
+}
+
+static void test_cmd_vm_check_event(void)
+{
+	__u16 invalid_id = 0xffff;
+	__u16 padding = 1, no_padding = 0;
+
+	cmd_vm_check_event(invalid_id, padding, -KVM_EINVAL);
+	cmd_vm_check_event(invalid_id, no_padding, -KVM_ENOENT);
+}
+
 static void test_introspection(struct kvm_vm *vm)
 {
 	setup_socket();
@@ -245,6 +302,8 @@ static void test_introspection(struct kvm_vm *vm)
 
 	test_cmd_invalid();
 	test_cmd_get_version();
+	test_cmd_vm_check_command();
+	test_cmd_vm_check_event();
 
 	unhook_introspection(vm);
 }

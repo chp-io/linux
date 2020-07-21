@@ -12,6 +12,7 @@
 #define KVMI_MSG_SIZE_ALLOC (sizeof(struct kvmi_msg_hdr) + KVMI_MSG_SIZE)
 
 static DECLARE_BITMAP(Kvmi_always_allowed_commands, KVMI_NUM_COMMANDS);
+static DECLARE_BITMAP(Kvmi_known_events, KVMI_NUM_EVENTS);
 
 static struct kmem_cache *msg_cache;
 
@@ -51,15 +52,28 @@ bool kvmi_is_command_allowed(struct kvm_introspection *kvmi, u16 id)
 	return id < KVMI_NUM_COMMANDS && test_bit(id, kvmi->cmd_allow_mask);
 }
 
+bool kvmi_is_known_event(u8 id)
+{
+	return id < KVMI_NUM_EVENTS && test_bit(id, Kvmi_known_events);
+}
+
 static void setup_always_allowed_commands(void)
 {
 	bitmap_zero(Kvmi_always_allowed_commands, KVMI_NUM_COMMANDS);
 	set_bit(KVMI_GET_VERSION, Kvmi_always_allowed_commands);
+	set_bit(KVMI_VM_CHECK_COMMAND, Kvmi_always_allowed_commands);
+	set_bit(KVMI_VM_CHECK_EVENT, Kvmi_always_allowed_commands);
+}
+
+static void setup_known_events(void)
+{
+	bitmap_zero(Kvmi_known_events, KVMI_NUM_EVENTS);
 }
 
 int kvmi_init(void)
 {
 	setup_always_allowed_commands();
+	setup_known_events();
 
 	return kvmi_cache_create();
 }
