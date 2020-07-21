@@ -33,6 +33,8 @@ bool kvmi_cr_event(struct kvm_vcpu *vcpu, unsigned int cr,
 		   unsigned long old_value, unsigned long *new_value);
 bool kvmi_cr3_intercepted(struct kvm_vcpu *vcpu);
 bool kvmi_monitor_cr3w_intercept(struct kvm_vcpu *vcpu, bool enable);
+void kvmi_xsetbv_event(struct kvm_vcpu *vcpu, u8 xcr,
+		       u64 old_value, u64 new_value);
 
 #else /* CONFIG_KVM_INTROSPECTION */
 
@@ -45,6 +47,8 @@ static inline bool kvmi_cr_event(struct kvm_vcpu *vcpu, unsigned int cr,
 static inline bool kvmi_cr3_intercepted(struct kvm_vcpu *vcpu) { return false; }
 static inline bool kvmi_monitor_cr3w_intercept(struct kvm_vcpu *vcpu,
 						bool enable) { return false; }
+static inline void kvmi_xsetbv_event(struct kvm_vcpu *vcpu, u8 xcr,
+					u64 old_value, u64 new_value) { }
 
 #endif /* CONFIG_KVM_INTROSPECTION */
 

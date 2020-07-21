@@ -672,3 +672,51 @@ void kvmi_arch_send_trap_event(struct kvm_vcpu *vcpu)
 		kvmi_handle_common_event_actions(vcpu->kvm, action);
 	}
 }
+
+static u32 kvmi_send_xsetbv(struct kvm_vcpu *vcpu, u8 xcr, u64 old_value,
+			    u64 new_value)
+{
+	struct kvmi_event_xsetbv e;
+	int err, action;
+
+	memset(&e, 0, sizeof(e));
+	e.xcr = xcr;
+	e.old_value = old_value;
+	e.new_value = new_value;
+
+	err = kvmi_send_event(vcpu, KVMI_EVENT_XSETBV, &e, sizeof(e),
+			      NULL, 0, &action);
+	if (err)
+		return KVMI_EVENT_ACTION_CONTINUE;
+
+	return action;
+}
+
+static void __kvmi_xsetbv_event(struct kvm_vcpu *vcpu, u8 xcr,
+				u64 old_value, u64 new_value)
+{
+	u32 action;
+
+	action = kvmi_send_xsetbv(vcpu, xcr, old_value, new_value);
+	switch (action) {
+	case KVMI_EVENT_ACTION_CONTINUE:
+		break;
+	default:
+		kvmi_handle_common_event_actions(vcpu->kvm, action);
+	}
+}
+
+void kvmi_xsetbv_event(struct kvm_vcpu *vcpu, u8 xcr,
+		       u64 old_value, u64 new_value)
+{
+	struct kvm_introspection *kvmi;
+
+	kvmi = kvmi_get(vcpu->kvm);
+	if (!kvmi)
+		return;
+
+	if (is_event_enabled(vcpu, KVMI_EVENT_XSETBV))
+		__kvmi_xsetbv_event(vcpu, xcr, old_value, new_value);
+
+	kvmi_put(vcpu->kvm);
+}
