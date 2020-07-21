@@ -609,6 +609,39 @@ static int handle_vcpu_control_msr(const struct kvmi_vcpu_msg_job *job,
 	return kvmi_msg_vcpu_reply(job, msg, ec, NULL, 0);
 }
 
+static int handle_vcpu_control_singlestep(const struct kvmi_vcpu_msg_job *job,
+					  const struct kvmi_msg_hdr *msg,
+					  const void *_req)
+{
+	const struct kvmi_vcpu_control_singlestep *req = _req;
+	struct kvm_vcpu *vcpu = job->vcpu;
+	int ec = -KVM_EINVAL;
+	bool done;
+	int i;
+
+	if (req->enable > 1)
+		goto reply;
+
+	for (i = 0; i < sizeof(req->padding); i++)
+		if (req->padding[i])
+			goto reply;
+
+	if (req->enable)
+		done = kvmi_arch_start_singlestep(vcpu);
+	else
+		done = kvmi_arch_stop_singlestep(vcpu);
+
+	if (done) {
+		ec = 0;
+		VCPUI(vcpu)->singlestep.loop = !!req->enable;
+	} else {
+		ec = -KVM_EOPNOTSUPP;
+	}
+
+reply:
+	return kvmi_msg_vcpu_reply(job, msg, ec, NULL, 0);
+}
+
 /*
  * These functions are executed from the vCPU thread. The receiving thread
  * passes the messages using a newly allocated 'struct kvmi_vcpu_msg_job'
@@ -617,19 +650,20 @@ static int handle_vcpu_control_msr(const struct kvmi_vcpu_msg_job *job,
  */
 static int(*const msg_vcpu[])(const struct kvmi_vcpu_msg_job *,
 			      const struct kvmi_msg_hdr *, const void *) = {
-	[KVMI_EVENT]                 = handle_vcpu_event_reply,
-	[KVMI_VCPU_CONTROL_CR]       = handle_vcpu_control_cr,
-	[KVMI_VCPU_CONTROL_EVENTS]   = handle_vcpu_control_events,
-	[KVMI_VCPU_CONTROL_MSR]      = handle_vcpu_control_msr,
-	[KVMI_VCPU_GET_CPUID]        = handle_vcpu_get_cpuid,
-	[KVMI_VCPU_GET_INFO]         = handle_vcpu_get_info,
-	[KVMI_VCPU_GET_MTRR_TYPE]    = handle_vcpu_get_mtrr_type,
-	[KVMI_VCPU_GET_REGISTERS]    = handle_vcpu_get_registers,
-	[KVMI_VCPU_GET_XCR]          = handle_vcpu_get_xcr,
-	[KVMI_VCPU_GET_XSAVE]        = handle_vcpu_get_xsave,
-	[KVMI_VCPU_INJECT_EXCEPTION] = handle_vcpu_inject_exception,
-	[KVMI_VCPU_SET_REGISTERS]    = handle_vcpu_set_registers,
-	[KVMI_VCPU_SET_XSAVE]        = handle_vcpu_set_xsave,
+	[KVMI_EVENT]                   = handle_vcpu_event_reply,
+	[KVMI_VCPU_CONTROL_CR]         = handle_vcpu_control_cr,
+	[KVMI_VCPU_CONTROL_EVENTS]     = handle_vcpu_control_events,
+	[KVMI_VCPU_CONTROL_MSR]        = handle_vcpu_control_msr,
+	[KVMI_VCPU_CONTROL_SINGLESTEP] = handle_vcpu_control_singlestep,
+	[KVMI_VCPU_GET_CPUID]          = handle_vcpu_get_cpuid,
+	[KVMI_VCPU_GET_INFO]           = handle_vcpu_get_info,
+	[KVMI_VCPU_GET_MTRR_TYPE]      = handle_vcpu_get_mtrr_type,
+	[KVMI_VCPU_GET_REGISTERS]      = handle_vcpu_get_registers,
+	[KVMI_VCPU_GET_XCR]            = handle_vcpu_get_xcr,
+	[KVMI_VCPU_GET_XSAVE]          = handle_vcpu_get_xsave,
+	[KVMI_VCPU_INJECT_EXCEPTION]   = handle_vcpu_inject_exception,
+	[KVMI_VCPU_SET_REGISTERS]      = handle_vcpu_set_registers,
+	[KVMI_VCPU_SET_XSAVE]          = handle_vcpu_set_xsave,
 };
 
 static bool is_vcpu_command(u16 id)

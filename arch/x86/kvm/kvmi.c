@@ -1355,3 +1355,21 @@ void kvmi_arch_features(struct kvmi_features *feat)
 {
 	feat->singlestep = !!kvm_x86_ops.control_singlestep;
 }
+
+bool kvmi_arch_start_singlestep(struct kvm_vcpu *vcpu)
+{
+	if (!kvm_x86_ops.control_singlestep)
+		return false;
+
+	kvm_x86_ops.control_singlestep(vcpu, true);
+	return true;
+}
+
+bool kvmi_arch_stop_singlestep(struct kvm_vcpu *vcpu)
+{
+	if (!kvm_x86_ops.control_singlestep)
+		return false;
+
+	kvm_x86_ops.control_singlestep(vcpu, false);
+	return true;
+}
