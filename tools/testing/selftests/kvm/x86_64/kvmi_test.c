@@ -691,6 +691,17 @@ static int do_vcpu_command(struct kvm_vm *vm, int cmd_id,
 	return r;
 }
 
+static int __do_vcpu0_command(int cmd_id, struct kvmi_msg_hdr *req,
+			      size_t req_size, void *rpl, size_t rpl_size)
+{
+	struct kvmi_vcpu_hdr *vcpu_hdr = (struct kvmi_vcpu_hdr *)(req + 1);
+
+	vcpu_hdr->vcpu = 0;
+
+	send_message(cmd_id, req, req_size);
+	return receive_cmd_reply(req, rpl, rpl_size);
+}
+
 static int do_vcpu0_command(struct kvm_vm *vm, int cmd_id,
 			    struct kvmi_msg_hdr *req, size_t req_size,
 			    void *rpl, size_t rpl_size)
@@ -736,6 +747,47 @@ static void test_cmd_vcpu_get_info(struct kvm_vm *vm)
 		-r, kvm_strerror(-r));
 }
 
+static void cmd_vcpu_pause(__u8 wait, __u8 padding, int expected_err)
+{
+	struct {
+		struct kvmi_msg_hdr hdr;
+		struct kvmi_vcpu_hdr vcpu_hdr;
+		struct kvmi_vcpu_pause cmd;
+	} req = {};
+	int r;
+
+	req.cmd.wait = wait;
+	req.cmd.padding1 = padding;
+	req.cmd.padding2 = padding;
+	req.cmd.padding3 = padding;
+
+	r = __do_vcpu0_command(KVMI_VCPU_PAUSE, &req.hdr, sizeof(req), NULL, 0);
+	TEST_ASSERT(r == expected_err,
+		"KVMI_VCPU_PAUSE failed, error %d (%s), expected error %d\n",
+		-r, kvm_strerror(-r), expected_err);
+}
+
+static void pause_vcpu(void)
+{
+	cmd_vcpu_pause(1, 0, 0);
+}
+
+static void test_pause(struct kvm_vm *vm)
+{
+	__u8 no_wait = 0, wait = 1, wait_inval = 2;
+	__u8 padding = 1, no_padding = 0;
+
+	pause_vcpu();
+
+	cmd_vcpu_pause(wait, no_padding, 0);
+	cmd_vcpu_pause(wait_inval, no_padding, -KVM_EINVAL);
+	cmd_vcpu_pause(no_wait, padding, -KVM_EINVAL);
+
+	disallow_event(vm, KVMI_EVENT_PAUSE_VCPU);
+	cmd_vcpu_pause(no_wait, no_padding, -KVM_EPERM);
+	allow_event(vm, KVMI_EVENT_PAUSE_VCPU);
+}
+
 static void test_introspection(struct kvm_vm *vm)
 {
 	srandom(time(0));
@@ -751,6 +803,7 @@ static void test_introspection(struct kvm_vm *vm)
 	test_cmd_vm_control_events(vm);
 	test_memory_access(vm);
 	test_cmd_vcpu_get_info(vm);
+	test_pause(vm);
 
 	unhook_introspection(vm);
 }

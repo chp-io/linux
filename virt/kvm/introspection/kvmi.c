@@ -12,6 +12,8 @@
 #define KVMI_NUM_COMMANDS KVMI_NUM_MESSAGES
 #define KVMI_MSG_SIZE_ALLOC (sizeof(struct kvmi_msg_hdr) + KVMI_MSG_SIZE)
 
+#define MAX_PAUSE_REQUESTS 1001
+
 static DECLARE_BITMAP(Kvmi_always_allowed_commands, KVMI_NUM_COMMANDS);
 static DECLARE_BITMAP(Kvmi_known_events, KVMI_NUM_EVENTS);
 static DECLARE_BITMAP(Kvmi_known_vm_events, KVMI_NUM_EVENTS);
@@ -90,6 +92,7 @@ static void setup_known_events(void)
 	set_bit(KVMI_EVENT_UNHOOK, Kvmi_known_vm_events);
 
 	bitmap_zero(Kvmi_known_vcpu_events, KVMI_NUM_EVENTS);
+	set_bit(KVMI_EVENT_PAUSE_VCPU, Kvmi_known_vcpu_events);
 
 	bitmap_or(Kvmi_known_events, Kvmi_known_vm_events,
 		  Kvmi_known_vcpu_events, KVMI_NUM_EVENTS);
@@ -113,10 +116,14 @@ void kvmi_uninit(void)
 	kvmi_cache_destroy();
 }
 
-static void kvmi_make_request(struct kvm_vcpu *vcpu)
+static void kvmi_make_request(struct kvm_vcpu *vcpu, bool wait)
 {
 	kvm_make_request(KVM_REQ_INTROSPECTION, vcpu);
-	kvm_vcpu_kick(vcpu);
+
+	if (wait)
+		kvm_vcpu_kick_and_wait(vcpu);
+	else
+		kvm_vcpu_kick(vcpu);
 }
 
 static int __kvmi_add_job(struct kvm_vcpu *vcpu,
@@ -151,7 +158,7 @@ int kvmi_add_job(struct kvm_vcpu *vcpu,
 	err = __kvmi_add_job(vcpu, fct, ctx, free_fct);
 
 	if (!err)
-		kvmi_make_request(vcpu);
+		kvmi_make_request(vcpu, false);
 
 	return err;
 }
@@ -346,6 +353,22 @@ static int __kvmi_hook(struct kvm *kvm,
 	return 0;
 }
 
+static void kvmi_job_release_vcpu(struct kvm_vcpu *vcpu, void *ctx)
+{
+	struct kvm_vcpu_introspection *vcpui = VCPUI(vcpu);
+
+	atomic_set(&vcpui->pause_requests, 0);
+}
+
+static void kvmi_release_vcpus(struct kvm *kvm)
+{
+	struct kvm_vcpu *vcpu;
+	int i;
+
+	kvm_for_each_vcpu(i, vcpu, kvm)
+		kvmi_add_job(vcpu, kvmi_job_release_vcpu, NULL, NULL);
+}
+
 static int kvmi_recv_thread(void *arg)
 {
 	struct kvm_introspection *kvmi = arg;
@@ -358,6 +381,8 @@ static int kvmi_recv_thread(void *arg)
 	 * and prevent the vCPUs from sending other events.
 	 */
 	kvmi_sock_shutdown(kvmi);
+
+	kvmi_release_vcpus(kvmi->kvm);
 
 	kvmi_put(kvmi->kvm);
 	return 0;
@@ -718,15 +743,45 @@ void kvmi_run_jobs(struct kvm_vcpu *vcpu)
 	}
 }
 
+static void kvmi_vcpu_pause_event(struct kvm_vcpu *vcpu)
+{
+	struct kvm_vcpu_introspection *vcpui = VCPUI(vcpu);
+
+	atomic_dec(&vcpui->pause_requests);
+	/* to be implemented */
+}
+
 void kvmi_handle_requests(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu_introspection *vcpui = VCPUI(vcpu);
 	struct kvm_introspection *kvmi;
 
 	kvmi = kvmi_get(vcpu->kvm);
 	if (!kvmi)
 		return;
 
-	kvmi_run_jobs(vcpu);
+	for (;;) {
+		kvmi_run_jobs(vcpu);
+
+		if (atomic_read(&vcpui->pause_requests))
+			kvmi_vcpu_pause_event(vcpu);
+		else
+			break;
+	}
 
 	kvmi_put(vcpu->kvm);
+}
+
+int kvmi_cmd_vcpu_pause(struct kvm_vcpu *vcpu, bool wait)
+{
+	struct kvm_vcpu_introspection *vcpui = VCPUI(vcpu);
+
+	if (atomic_read(&vcpui->pause_requests) > MAX_PAUSE_REQUESTS)
+		return -KVM_EBUSY;
+
+	atomic_inc(&vcpui->pause_requests);
+
+	kvmi_make_request(vcpu, wait);
+
+	return 0;
 }

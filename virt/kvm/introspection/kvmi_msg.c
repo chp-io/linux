@@ -265,11 +265,53 @@ static int handle_vm_write_physical(struct kvm_introspection *kvmi,
 }
 
 /*
+ * This vCPU command is handled by the receiving thread instead of
+ * the vCPU thread in order to make it easier for the introspection tool
+ * to implement a 'pause VM' command by sending a 'pause vCPU' command
+ * for every vCPU. It can consider that the VM has stopped
+ * once it receives the reply for the last 'pause vCPU' command.
+ */
+static int handle_vcpu_pause(struct kvm_introspection *kvmi,
+			     const struct kvmi_msg_hdr *msg,
+			     const void *_req)
+{
+	const struct kvmi_vcpu_hdr *vcpu_hdr = _req;
+	const struct kvmi_vcpu_pause *vcpu_req;
+	struct kvm_vcpu *vcpu = NULL;
+	int err;
+
+	vcpu_req = (const struct kvmi_vcpu_pause *) (vcpu_hdr + 1);
+
+	if (invalid_vcpu_hdr(vcpu_hdr) || vcpu_req->wait > 1) {
+		err = -KVM_EINVAL;
+		goto reply;
+	}
+
+	if (vcpu_req->padding1 || vcpu_req->padding2 || vcpu_req->padding3) {
+		err = -KVM_EINVAL;
+		goto reply;
+	}
+
+	if (!is_event_allowed(kvmi, KVMI_EVENT_PAUSE_VCPU)) {
+		err = -KVM_EPERM;
+		goto reply;
+	}
+
+	err = kvmi_get_vcpu(kvmi, vcpu_hdr->vcpu, &vcpu);
+	if (!err)
+		err = kvmi_cmd_vcpu_pause(vcpu, vcpu_req->wait == 1);
+
+reply:
+	return kvmi_msg_vm_reply(kvmi, msg, err, NULL, 0);
+}
+
+/*
  * These commands are executed by the receiving thread.
  */
 static int(*const msg_vm[])(struct kvm_introspection *,
 			    const struct kvmi_msg_hdr *, const void *) = {
 	[KVMI_GET_VERSION]       = handle_get_version,
+	[KVMI_VCPU_PAUSE]        = handle_vcpu_pause,
 	[KVMI_VM_CHECK_COMMAND]  = handle_vm_check_command,
 	[KVMI_VM_CHECK_EVENT]    = handle_vm_check_event,
 	[KVMI_VM_CONTROL_EVENTS] = handle_vm_control_events,
