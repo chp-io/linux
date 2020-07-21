@@ -1514,6 +1514,43 @@ static void test_event_xsetbv(struct kvm_vm *vm)
 	disable_vcpu_event(vm, event_id);
 }
 
+static void cmd_vcpu_get_xcr(struct kvm_vm *vm, u8 xcr, u64 *value,
+			     u8 padding, int expected_err)
+{
+	struct {
+		struct kvmi_msg_hdr hdr;
+		struct kvmi_vcpu_hdr vcpu_hdr;
+		struct kvmi_vcpu_get_xcr cmd;
+	} req = { 0 };
+	struct kvmi_vcpu_get_xcr_reply rpl = { 0 };
+	int r;
+
+	req.cmd.xcr = xcr;
+	req.cmd.padding[6] = padding;
+
+	r = do_vcpu0_command(vm, KVMI_VCPU_GET_XCR, &req.hdr, sizeof(req),
+			     &rpl, sizeof(rpl));
+
+	TEST_ASSERT(r == expected_err,
+		    "KVMI_VCPU_GET_XCR failed with error %d (%s), expected err %d\n",
+		    -r, kvm_strerror(-r), expected_err);
+
+	*value = r == 0 ? rpl.value : 0;
+}
+
+static void test_cmd_vcpu_get_xcr(struct kvm_vm *vm)
+{
+	u8 no_padding = 0, padding = 1;
+	u8 xcr0 = 0, xcr1 = 1;
+	u64 value;
+
+	cmd_vcpu_get_xcr(vm, xcr0, &value, no_padding, 0);
+	pr_info("XCR0 0x%lx\n", value);
+
+	cmd_vcpu_get_xcr(vm, xcr0, &value, padding, -KVM_EINVAL);
+	cmd_vcpu_get_xcr(vm, xcr1, &value, no_padding, -KVM_EINVAL);
+}
+
 static void test_introspection(struct kvm_vm *vm)
 {
 	srandom(time(0));
@@ -1541,6 +1578,7 @@ static void test_introspection(struct kvm_vm *vm)
 	test_cmd_vcpu_inject_exception(vm);
 	test_cmd_vm_get_max_gfn();
 	test_event_xsetbv(vm);
+	test_cmd_vcpu_get_xcr(vm);
 
 	unhook_introspection(vm);
 }

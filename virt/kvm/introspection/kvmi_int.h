@@ -105,5 +105,8 @@ int kvmi_arch_cmd_vcpu_inject_exception(struct kvm_vcpu *vcpu, u8 vector,
 					u32 error_code, u64 address);
 void kvmi_arch_send_trap_event(struct kvm_vcpu *vcpu);
 void kvmi_arch_inject_exception(struct kvm_vcpu *vcpu);
+int kvmi_arch_cmd_vcpu_get_xcr(struct kvm_vcpu *vcpu,
+			       const struct kvmi_vcpu_get_xcr *req,
+			       struct kvmi_vcpu_get_xcr_reply *rpl);
 
 #endif

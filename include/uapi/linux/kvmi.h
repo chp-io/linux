@@ -39,6 +39,8 @@ enum {
 
 	KVMI_VM_GET_MAX_GFN = 17,
 
+	KVMI_VCPU_GET_XCR = 18,
+
 	KVMI_NUM_MESSAGES
 };
 

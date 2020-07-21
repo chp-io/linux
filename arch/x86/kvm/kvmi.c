@@ -720,3 +720,20 @@ void kvmi_xsetbv_event(struct kvm_vcpu *vcpu, u8 xcr,
 
 	kvmi_put(vcpu->kvm);
 }
+
+int kvmi_arch_cmd_vcpu_get_xcr(struct kvm_vcpu *vcpu,
+			       const struct kvmi_vcpu_get_xcr *req,
+			       struct kvmi_vcpu_get_xcr_reply *rpl)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(req->padding); i++)
+		if (req->padding[i])
+			return -KVM_EINVAL;
+
+	if (req->xcr != 0)
+		return -KVM_EINVAL;
+
+	rpl->value = vcpu->arch.xcr0;
+	return 0;
+}
