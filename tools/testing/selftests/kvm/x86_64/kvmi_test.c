@@ -84,6 +84,16 @@ static void set_command_perm(struct kvm_vm *vm, __s32 id, __u32 allow,
 		 "KVM_INTROSPECTION_COMMAND");
 }
 
+static void disallow_command(struct kvm_vm *vm, __s32 id)
+{
+	set_command_perm(vm, id, 0, 0);
+}
+
+static void allow_command(struct kvm_vm *vm, __s32 id)
+{
+	set_command_perm(vm, id, 1, 0);
+}
+
 static void hook_introspection(struct kvm_vm *vm)
 {
 	__u32 allow = 1, disallow = 0, allow_inval = 2;
@@ -258,14 +268,18 @@ static void cmd_vm_check_command(__u16 id, __u16 padding, int expected_err)
 		-r, kvm_strerror(-r), expected_err);
 }
 
-static void test_cmd_vm_check_command(void)
+static void test_cmd_vm_check_command(struct kvm_vm *vm)
 {
-	__u16 valid_id = KVMI_GET_VERSION, invalid_id = 0xffff;
+	__u16 valid_id = KVMI_VM_GET_INFO, invalid_id = 0xffff;
 	__u16 padding = 1, no_padding = 0;
 
 	cmd_vm_check_command(valid_id, no_padding, 0);
 	cmd_vm_check_command(valid_id, padding, -KVM_EINVAL);
 	cmd_vm_check_command(invalid_id, no_padding, -KVM_ENOENT);
+
+	disallow_command(vm, valid_id);
+	cmd_vm_check_command(valid_id, no_padding, -KVM_EPERM);
+	allow_command(vm, valid_id);
 }
 
 static void cmd_vm_check_event(__u16 id, __u16 padding, int expected_err)
@@ -295,6 +309,20 @@ static void test_cmd_vm_check_event(void)
 	cmd_vm_check_event(invalid_id, no_padding, -KVM_ENOENT);
 }
 
+static void test_cmd_vm_get_info(void)
+{
+	struct kvmi_vm_get_info_reply rpl;
+	struct kvmi_msg_hdr req;
+
+	test_vm_command(KVMI_VM_GET_INFO, &req, sizeof(req), &rpl,
+			sizeof(rpl));
+	TEST_ASSERT(rpl.vcpu_count == 1,
+		    "Unexpected number of vCPU count %u\n",
+		    rpl.vcpu_count);
+
+	pr_info("vcpu count: %u\n", rpl.vcpu_count);
+}
+
 static void test_introspection(struct kvm_vm *vm)
 {
 	setup_socket();
@@ -302,8 +330,9 @@ static void test_introspection(struct kvm_vm *vm)
 
 	test_cmd_invalid();
 	test_cmd_get_version();
-	test_cmd_vm_check_command();
+	test_cmd_vm_check_command(vm);
 	test_cmd_vm_check_event();
+	test_cmd_vm_get_info();
 
 	unhook_introspection(vm);
 }
