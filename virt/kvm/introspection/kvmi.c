@@ -73,6 +73,11 @@ bool kvmi_is_known_vm_event(u8 id)
 	return id < KVMI_NUM_EVENTS && test_bit(id, Kvmi_known_vm_events);
 }
 
+bool kvmi_is_known_vcpu_event(u8 id)
+{
+	return id < KVMI_NUM_EVENTS && test_bit(id, Kvmi_known_vcpu_events);
+}
+
 static bool is_vm_event_enabled(struct kvm_introspection *kvmi, int event)
 {
 	return test_bit(event, kvmi->vm_event_enable_mask);
@@ -179,6 +184,12 @@ static bool alloc_vcpui(struct kvm_vcpu *vcpu)
 	if (!vcpui)
 		return false;
 
+	vcpui->ev_enable_mask = bitmap_zalloc(KVMI_NUM_EVENTS, GFP_KERNEL);
+	if (!vcpui->ev_enable_mask) {
+		kfree(vcpu);
+		return false;
+	}
+
 	INIT_LIST_HEAD(&vcpui->job_list);
 	spin_lock_init(&vcpui->job_lock);
 
@@ -213,6 +224,8 @@ static void free_vcpui(struct kvm_vcpu *vcpu)
 		return;
 
 	free_vcpu_jobs(vcpui);
+
+	bitmap_free(vcpui->ev_enable_mask);
 
 	kfree(vcpui);
 	vcpu->kvmi = NULL;
@@ -609,6 +622,19 @@ int kvmi_cmd_vm_control_events(struct kvm_introspection *kvmi,
 		set_bit(event_id, kvmi->vm_event_enable_mask);
 	else
 		clear_bit(event_id, kvmi->vm_event_enable_mask);
+
+	return 0;
+}
+
+int kvmi_cmd_vcpu_control_events(struct kvm_vcpu *vcpu,
+				 unsigned int event_id, bool enable)
+{
+	struct kvm_vcpu_introspection *vcpui = VCPUI(vcpu);
+
+	if (enable)
+		set_bit(event_id, vcpui->ev_enable_mask);
+	else
+		clear_bit(event_id, vcpui->ev_enable_mask);
 
 	return 0;
 }

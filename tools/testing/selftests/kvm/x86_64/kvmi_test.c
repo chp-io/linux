@@ -834,6 +834,59 @@ static void test_pause(struct kvm_vm *vm)
 	allow_event(vm, KVMI_EVENT_PAUSE_VCPU);
 }
 
+static void cmd_vcpu_control_event(struct kvm_vm *vm, __u16 event_id,
+				   __u8 enable, __u16 padding,
+				   int expected_err)
+{
+	struct {
+		struct kvmi_msg_hdr hdr;
+		struct kvmi_vcpu_hdr vcpu_hdr;
+		struct kvmi_vcpu_control_events cmd;
+	} req = {};
+	int r;
+
+	req.cmd.event_id = event_id;
+	req.cmd.enable = enable;
+	req.cmd.padding1 = padding;
+	req.cmd.padding2 = padding;
+
+	r = do_vcpu0_command(vm, KVMI_VCPU_CONTROL_EVENTS,
+			     &req.hdr, sizeof(req), NULL, 0);
+	TEST_ASSERT(r == expected_err,
+		"KVMI_VCPU_CONTROL_EVENTS failed to enable vCPU event %d, error %d (%s), expected error %d\n",
+		event_id, -r, kvm_strerror(-r), expected_err);
+}
+
+
+static void enable_vcpu_event(struct kvm_vm *vm, __u16 event_id)
+{
+	cmd_vcpu_control_event(vm, event_id, 1, 0, 0);
+}
+
+static void disable_vcpu_event(struct kvm_vm *vm, __u16 event_id)
+{
+	cmd_vcpu_control_event(vm, event_id, 0, 0, 0);
+}
+
+static void test_cmd_vcpu_control_events(struct kvm_vm *vm)
+{
+	__u16 id = KVMI_EVENT_PAUSE_VCPU, invalid_id = 0xffff;
+	__u16 padding = 1, no_padding = 0;
+	__u8 enable = 1, enable_inval = 2;
+
+	enable_vcpu_event(vm, id);
+	disable_vcpu_event(vm, id);
+
+	cmd_vcpu_control_event(vm, id, enable, padding, -KVM_EINVAL);
+	cmd_vcpu_control_event(vm, id, enable_inval, no_padding, -KVM_EINVAL);
+	cmd_vcpu_control_event(vm, invalid_id, enable, no_padding, -KVM_EINVAL);
+
+	disallow_event(vm, id);
+	cmd_vcpu_control_event(vm, id, enable, no_padding, -KVM_EPERM);
+	allow_event(vm, id);
+
+}
+
 static void test_introspection(struct kvm_vm *vm)
 {
 	srandom(time(0));
@@ -850,6 +903,7 @@ static void test_introspection(struct kvm_vm *vm)
 	test_memory_access(vm);
 	test_cmd_vcpu_get_info(vm);
 	test_pause(vm);
+	test_cmd_vcpu_control_events(vm);
 
 	unhook_introspection(vm);
 }
