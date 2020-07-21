@@ -1420,6 +1420,17 @@ static void test_cmd_vcpu_inject_exception(struct kvm_vm *vm)
 	disable_vcpu_event(vm, KVMI_EVENT_BREAKPOINT);
 }
 
+static void test_cmd_vm_get_max_gfn(void)
+{
+	struct kvmi_vm_get_max_gfn_reply rpl;
+	struct kvmi_msg_hdr req;
+
+	test_vm_command(KVMI_VM_GET_MAX_GFN, &req, sizeof(req),
+			&rpl, sizeof(rpl));
+
+	pr_info("max_gfn: 0x%llx\n", rpl.gfn);
+}
+
 static void test_introspection(struct kvm_vm *vm)
 {
 	srandom(time(0));
@@ -1445,6 +1456,7 @@ static void test_introspection(struct kvm_vm *vm)
 	test_cmd_vm_control_cleanup(vm);
 	test_cmd_vcpu_control_cr(vm);
 	test_cmd_vcpu_inject_exception(vm);
+	test_cmd_vm_get_max_gfn();
 
 	unhook_introspection(vm);
 }

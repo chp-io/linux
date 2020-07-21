@@ -37,6 +37,8 @@ enum {
 	KVMI_VCPU_CONTROL_CR       = 15,
 	KVMI_VCPU_INJECT_EXCEPTION = 16,
 
+	KVMI_VM_GET_MAX_GFN = 17,
+
 	KVMI_NUM_MESSAGES
 };
 
@@ -147,6 +149,10 @@ struct kvmi_vm_control_cleanup {
 	__u8 padding1;
 	__u16 padding2;
 	__u32 padding3;
+};
+
+struct kvmi_vm_get_max_gfn_reply {
+	__u64 gfn;
 };
 
 struct kvmi_event {
