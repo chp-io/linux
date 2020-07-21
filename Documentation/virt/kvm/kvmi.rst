@@ -550,6 +550,7 @@ Enables/disables vCPU introspection events. This command can be used with
 the following events::
 
 	KVMI_EVENT_BREAKPOINT
+	KVMI_EVENT_CR
 	KVMI_EVENT_HYPERCALL
 
 When an event is enabled, the introspection tool is notified and
@@ -713,6 +714,40 @@ interceptions). By default it is disabled.
 
 * -KVM_EINVAL - the padding is not zero
 * -KVM_EINVAL - 'enabled' is not 1 or 0
+
+15. KVMI_VCPU_CONTROL_CR
+------------------------
+
+:Architectures: x86
+:Versions: >= 1
+:Parameters:
+
+::
+
+	struct kvmi_vcpu_hdr;
+	struct kvmi_vcpu_control_cr {
+		__u8 cr;
+		__u8 enable;
+		__u16 padding1;
+		__u32 padding2;
+	};
+
+:Returns:
+
+::
+
+	struct kvmi_error_code
+
+Enables/disables introspection for a specific control register and must
+be used in addition to *KVMI_VCPU_CONTROL_EVENTS* with the *KVMI_EVENT_CR*
+ID set.
+
+:Errors:
+
+* -KVM_EINVAL - the selected vCPU is invalid
+* -KVM_EINVAL - the specified control register is not CR0, CR3 or CR4
+* -KVM_EINVAL - the padding is not zero
+* -KVM_EAGAIN - the selected vCPU can't be introspected yet
 
 Events
 ======
@@ -890,3 +925,38 @@ trying to perform a certain operation (like creating a process).
 ``kvmi_event`` and the guest physical address are sent to the introspection tool.
 
 The *RETRY* action is used by the introspection tool for its own breakpoints.
+
+5. KVMI_EVENT_CR
+----------------
+
+:Architectures: x86
+:Versions: >= 1
+:Actions: CONTINUE, CRASH
+:Parameters:
+
+::
+
+	struct kvmi_event;
+	struct kvmi_event_cr {
+		__u8 cr;
+		__u8 padding[7];
+		__u64 old_value;
+		__u64 new_value;
+	};
+
+:Returns:
+
+::
+
+	struct kvmi_vcpu_hdr;
+	struct kvmi_event_reply;
+	struct kvmi_event_cr_reply {
+		__u64 new_val;
+	};
+
+This event is sent when a control register is going to be changed and the
+introspection has been enabled for this event and for this specific
+register (see **KVMI_VCPU_CONTROL_EVENTS**).
+
+``kvmi_event``, the control register number, the old value and the new value
+are sent to the introspection tool. The *CONTINUE* action will set the ``new_val``.
