@@ -10,6 +10,21 @@
 #include "cpuid.h"
 #include "../../../virt/kvm/introspection/kvmi_int.h"
 
+static bool kvmi_track_preread(struct kvm_vcpu *vcpu, gpa_t gpa, gva_t gva,
+			       int bytes,
+			       struct kvm_page_track_notifier_node *node);
+static bool kvmi_track_prewrite(struct kvm_vcpu *vcpu, gpa_t gpa, gva_t gva,
+				const u8 *new, int bytes,
+				struct kvm_page_track_notifier_node *node);
+static bool kvmi_track_preexec(struct kvm_vcpu *vcpu, gpa_t gpa, gva_t gva,
+			       struct kvm_page_track_notifier_node *node);
+static void kvmi_track_create_slot(struct kvm *kvm,
+				   struct kvm_memory_slot *slot,
+				   unsigned long npages,
+				   struct kvm_page_track_notifier_node *node);
+static void kvmi_track_flush_slot(struct kvm *kvm, struct kvm_memory_slot *slot,
+				  struct kvm_page_track_notifier_node *node);
+
 static unsigned int kvmi_vcpu_mode(const struct kvm_vcpu *vcpu,
 				   const struct kvm_sregs *sregs)
 {
@@ -1208,4 +1223,130 @@ void kvmi_arch_update_page_tracking(struct kvm *kvm,
 			set_bit(slot->id, arch->active[mode]);
 		}
 	}
+}
+
+void kvmi_arch_hook(struct kvm *kvm)
+{
+	struct kvm_introspection *kvmi = KVMI(kvm);
+
+	kvmi->arch.kptn_node.track_preread = kvmi_track_preread;
+	kvmi->arch.kptn_node.track_prewrite = kvmi_track_prewrite;
+	kvmi->arch.kptn_node.track_preexec = kvmi_track_preexec;
+	kvmi->arch.kptn_node.track_create_slot = kvmi_track_create_slot;
+	kvmi->arch.kptn_node.track_flush_slot = kvmi_track_flush_slot;
+
+	kvm_page_track_register_notifier(kvm, &kvmi->arch.kptn_node);
+}
+
+void kvmi_arch_unhook(struct kvm *kvm)
+{
+	struct kvm_introspection *kvmi = KVMI(kvm);
+
+	kvm_page_track_unregister_notifier(kvm, &kvmi->arch.kptn_node);
+}
+
+static bool is_pf_of_interest(struct kvm_vcpu *vcpu, gpa_t gpa, u8 access)
+{
+	if (!kvm_x86_ops.spt_fault(vcpu))
+		return false;
+
+	if (kvm_x86_ops.gpt_translation_fault(vcpu))
+		return false;
+
+	return kvmi_restricted_page_access(KVMI(vcpu->kvm), gpa, access);
+}
+
+static bool handle_pf_event(struct kvm_vcpu *vcpu, gpa_t gpa, gva_t gva,
+			    int access)
+{
+	if (!is_pf_of_interest(vcpu, gpa, access))
+		return true;
+
+	return kvmi_pf_event(vcpu, gpa, gva, access);
+}
+
+static bool kvmi_track_preread(struct kvm_vcpu *vcpu, gpa_t gpa, gva_t gva,
+			       int bytes,
+			       struct kvm_page_track_notifier_node *node)
+{
+	struct kvm_introspection *kvmi;
+	bool ret = true;
+
+	kvmi = kvmi_get(vcpu->kvm);
+	if (!kvmi)
+		return true;
+
+	if (is_event_enabled(vcpu, KVMI_EVENT_PF))
+		ret = handle_pf_event(vcpu, gpa, gva, KVMI_PAGE_ACCESS_R);
+
+	kvmi_put(vcpu->kvm);
+
+	return ret;
+}
+
+static bool kvmi_track_prewrite(struct kvm_vcpu *vcpu, gpa_t gpa, gva_t gva,
+				const u8 *new, int bytes,
+				struct kvm_page_track_notifier_node *node)
+{
+	struct kvm_introspection *kvmi;
+	bool ret = true;
+
+	kvmi = kvmi_get(vcpu->kvm);
+	if (!kvmi)
+		return true;
+
+	if (is_event_enabled(vcpu, KVMI_EVENT_PF))
+		ret = handle_pf_event(vcpu, gpa, gva, KVMI_PAGE_ACCESS_W);
+
+	kvmi_put(vcpu->kvm);
+
+	return ret;
+}
+
+static bool kvmi_track_preexec(struct kvm_vcpu *vcpu, gpa_t gpa, gva_t gva,
+			       struct kvm_page_track_notifier_node *node)
+{
+	struct kvm_introspection *kvmi;
+	bool ret = true;
+
+	kvmi = kvmi_get(vcpu->kvm);
+	if (!kvmi)
+		return true;
+
+	if (is_event_enabled(vcpu, KVMI_EVENT_PF))
+		ret = handle_pf_event(vcpu, gpa, gva, KVMI_PAGE_ACCESS_X);
+
+	kvmi_put(vcpu->kvm);
+
+	return ret;
+}
+
+static void kvmi_track_create_slot(struct kvm *kvm,
+				   struct kvm_memory_slot *slot,
+				   unsigned long npages,
+				   struct kvm_page_track_notifier_node *node)
+{
+	struct kvm_introspection *kvmi;
+
+	kvmi = kvmi_get(kvm);
+	if (!kvmi)
+		return;
+
+	kvmi_add_memslot(kvm, slot, npages);
+
+	kvmi_put(kvm);
+}
+
+static void kvmi_track_flush_slot(struct kvm *kvm, struct kvm_memory_slot *slot,
+				  struct kvm_page_track_notifier_node *node)
+{
+	struct kvm_introspection *kvmi;
+
+	kvmi = kvmi_get(kvm);
+	if (!kvmi)
+		return;
+
+	kvmi_remove_memslot(kvm, slot);
+
+	kvmi_put(kvm);
 }

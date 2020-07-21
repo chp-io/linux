@@ -60,6 +60,7 @@ enum {
 	KVMI_EVENT_XSETBV     = 6,
 	KVMI_EVENT_DESCRIPTOR = 7,
 	KVMI_EVENT_MSR        = 8,
+	KVMI_EVENT_PF         = 9,
 
 	KVMI_NUM_EVENTS
 };
@@ -216,6 +217,15 @@ struct kvmi_vcpu_inject_exception {
 	__u16 padding2;
 	__u32 error_code;
 	__u64 address;
+};
+
+struct kvmi_event_pf {
+	__u64 gva;
+	__u64 gpa;
+	__u8 access;
+	__u8 padding1;
+	__u16 padding2;
+	__u32 padding3;
 };
 
 #endif /* _UAPI__LINUX_KVMI_H */

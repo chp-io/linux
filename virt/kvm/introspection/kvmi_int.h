@@ -47,6 +47,7 @@ int kvmi_msg_send_unhook(struct kvm_introspection *kvmi);
 u32 kvmi_msg_send_vcpu_pause(struct kvm_vcpu *vcpu);
 u32 kvmi_msg_send_hypercall(struct kvm_vcpu *vcpu);
 u32 kvmi_msg_send_bp(struct kvm_vcpu *vcpu, u64 gpa, u8 insn_len);
+u32 kvmi_msg_send_pf(struct kvm_vcpu *vcpu, u64 gpa, u64 gva, u8 access);
 
 /* kvmi.c */
 void *kvmi_msg_alloc(void);
@@ -82,6 +83,12 @@ int kvmi_cmd_vcpu_set_registers(struct kvm_vcpu *vcpu,
 int kvmi_cmd_set_page_access(struct kvm_introspection *kvmi,
 			     const struct kvmi_msg_hdr *msg,
 			     const struct kvmi_vm_set_page_access *req);
+bool kvmi_restricted_page_access(struct kvm_introspection *kvmi, gpa_t gpa,
+				 u8 access);
+bool kvmi_pf_event(struct kvm_vcpu *vcpu, gpa_t gpa, gva_t gva, u8 access);
+void kvmi_add_memslot(struct kvm *kvm, struct kvm_memory_slot *slot,
+		      unsigned long npages);
+void kvmi_remove_memslot(struct kvm *kvm, struct kvm_memory_slot *slot);
 
 /* arch */
 bool kvmi_arch_vcpu_alloc_interception(struct kvm_vcpu *vcpu);
@@ -129,5 +136,7 @@ int kvmi_arch_cmd_vcpu_control_msr(struct kvm_vcpu *vcpu,
 void kvmi_arch_update_page_tracking(struct kvm *kvm,
 				    struct kvm_memory_slot *slot,
 				    struct kvmi_mem_access *m);
+void kvmi_arch_hook(struct kvm *kvm);
+void kvmi_arch_unhook(struct kvm *kvm);
 
 #endif
