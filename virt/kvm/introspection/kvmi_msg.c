@@ -148,6 +148,8 @@ static int handle_get_version(struct kvm_introspection *kvmi,
 	memset(&rpl, 0, sizeof(rpl));
 	rpl.version = kvmi_version();
 
+	kvmi_arch_features(&rpl.features);
+
 	return kvmi_msg_vm_reply(kvmi, msg, 0, &rpl, sizeof(rpl));
 }
 

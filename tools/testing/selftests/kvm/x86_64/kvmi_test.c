@@ -56,6 +56,8 @@ struct vcpu_worker_data {
 	bool restart_on_shutdown;
 };
 
+static struct kvmi_features features;
+
 typedef void (*fct_pf_event)(struct kvm_vm *vm, struct kvmi_msg_hdr *hdr,
 				struct pf_ev *ev,
 				struct vcpu_reply *rpl);
@@ -437,7 +439,10 @@ static void test_cmd_get_version(void)
 		    "Unexpected KVMI version %d, expecting %d\n",
 		    rpl.version, KVMI_VERSION);
 
+	features = rpl.features;
+
 	pr_info("KVMI version: %u\n", rpl.version);
+	pr_info("\tsinglestep: %u\n", features.singlestep);
 }
 
 static void cmd_vm_check_command(__u16 id, __u16 padding, int expected_err)

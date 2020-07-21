@@ -101,6 +101,7 @@ struct kvmi_error_code {
 struct kvmi_get_version_reply {
 	__u32 version;
 	__u32 padding;
+	struct kvmi_features features;
 };
 
 struct kvmi_vm_check_command {
