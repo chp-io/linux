@@ -19,6 +19,7 @@
 	kvm_info("%pU ERROR: " fmt, &kvmi->uuid, ## __VA_ARGS__)
 
 #define KVMI(kvm) ((kvm)->kvmi)
+#define VCPUI(vcpu) ((vcpu)->kvmi)
 
 /* kvmi_msg.c */
 bool kvmi_sock_get(struct kvm_introspection *kvmi, int fd);
