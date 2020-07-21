@@ -784,3 +784,10 @@ int kvmi_arch_cmd_vcpu_set_xsave(struct kvm_vcpu *vcpu,
 
 	return err ? -KVM_EINVAL : 0;
 }
+
+int kvmi_arch_cmd_vcpu_get_mtrr_type(struct kvm_vcpu *vcpu, u64 gpa, u8 *type)
+{
+	*type = kvm_mtrr_get_guest_memory_type(vcpu, gpa_to_gfn(gpa));
+
+	return 0;
+}
