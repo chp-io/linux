@@ -32,5 +32,8 @@ void *kvmi_msg_alloc(void);
 void kvmi_msg_free(void *addr);
 bool kvmi_is_command_allowed(struct kvm_introspection *kvmi, u16 id);
 bool kvmi_is_known_event(u8 id);
+bool kvmi_is_known_vm_event(u8 id);
+int kvmi_cmd_vm_control_events(struct kvm_introspection *kvmi,
+				unsigned int event_id, bool enable);
 
 #endif

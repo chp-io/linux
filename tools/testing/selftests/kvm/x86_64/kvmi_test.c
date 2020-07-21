@@ -370,15 +370,68 @@ static void receive_event(struct kvmi_msg_hdr *hdr, struct kvmi_event *ev,
 		hdr->size, ev_size);
 }
 
+static void cmd_vm_control_events(__u16 event_id, __u8 enable, __u16 padding,
+				  int expected_err)
+{
+	struct {
+		struct kvmi_msg_hdr hdr;
+		struct kvmi_vm_control_events cmd;
+	} req = {};
+	int r;
+
+	req.cmd.event_id = event_id;
+	req.cmd.enable = enable;
+	req.cmd.padding1 = padding;
+	req.cmd.padding2 = padding;
+
+	r = do_command(KVMI_VM_CONTROL_EVENTS, &req.hdr, sizeof(req),
+			     NULL, 0);
+	TEST_ASSERT(r == expected_err,
+		"KVMI_VM_CONTROL_EVENTS failed to enable VM event %d, error %d (%s), expected error %d\n",
+		event_id, -r, kvm_strerror(-r), expected_err);
+}
+
+static void enable_vm_event(__u16 event_id)
+{
+	cmd_vm_control_events(event_id, 1, 0, 0);
+}
+
+static void disable_vm_event(__u16 event_id)
+{
+	cmd_vm_control_events(event_id, 0, 0, 0);
+}
+
 static void test_event_unhook(struct kvm_vm *vm)
 {
 	__u16 id = KVMI_EVENT_UNHOOK;
 	struct kvmi_msg_hdr hdr;
 	struct kvmi_event ev;
 
+	enable_vm_event(id);
+
 	trigger_event_unhook_notification(vm);
 
 	receive_event(&hdr, &ev, sizeof(ev), id);
+
+	disable_vm_event(id);
+}
+
+static void test_cmd_vm_control_events(struct kvm_vm *vm)
+{
+	__u16 id = KVMI_EVENT_UNHOOK, invalid_id = 0xffff;
+	__u16 padding = 1, no_padding = 0;
+	__u8 enable = 1, enable_inval = 2;
+
+	enable_vm_event(id);
+	disable_vm_event(id);
+
+	cmd_vm_control_events(id, enable, padding, -KVM_EINVAL);
+	cmd_vm_control_events(id, enable_inval, no_padding, -KVM_EINVAL);
+	cmd_vm_control_events(invalid_id, enable, no_padding, -KVM_EINVAL);
+
+	disallow_event(vm, id);
+	cmd_vm_control_events(id, enable, no_padding, -KVM_EPERM);
+	allow_event(vm, id);
 }
 
 static void test_introspection(struct kvm_vm *vm)
@@ -392,6 +445,7 @@ static void test_introspection(struct kvm_vm *vm)
 	test_cmd_vm_check_event(vm);
 	test_cmd_vm_get_info();
 	test_event_unhook(vm);
+	test_cmd_vm_control_events(vm);
 
 	unhook_introspection(vm);
 }
