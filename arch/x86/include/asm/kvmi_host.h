@@ -4,6 +4,9 @@
 
 #include <asm/kvmi.h>
 
+struct kvm_vcpu_arch_introspection {
+};
+
 struct kvm_arch_introspection {
 };
 
