@@ -47,4 +47,8 @@ int kvmi_cmd_read_physical(struct kvm *kvm, u64 gpa, size_t size,
 int kvmi_cmd_write_physical(struct kvm *kvm, u64 gpa, size_t size,
 			    const void *buf);
 
+/* arch */
+int kvmi_arch_cmd_vcpu_get_info(struct kvm_vcpu *vcpu,
+				struct kvmi_vcpu_get_info_reply *rpl);
+
 #endif
