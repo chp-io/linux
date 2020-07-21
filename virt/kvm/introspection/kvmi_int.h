@@ -26,4 +26,9 @@ void kvmi_sock_shutdown(struct kvm_introspection *kvmi);
 void kvmi_sock_put(struct kvm_introspection *kvmi);
 bool kvmi_msg_process(struct kvm_introspection *kvmi);
 
+/* kvmi.c */
+void *kvmi_msg_alloc(void);
+void kvmi_msg_free(void *addr);
+bool kvmi_is_command_allowed(struct kvm_introspection *kvmi, u16 id);
+
 #endif
