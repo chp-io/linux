@@ -3829,6 +3829,25 @@ static long kvm_vm_ioctl(struct file *filp,
 	case KVM_CHECK_EXTENSION:
 		r = kvm_vm_ioctl_check_extension_generic(kvm, arg);
 		break;
+#ifdef CONFIG_KVM_INTROSPECTION
+	case KVM_INTROSPECTION_HOOK:
+		r = -EPERM;
+		if (enable_introspection) {
+			struct kvm_introspection_hook hook;
+
+			if (copy_from_user(&hook, argp, sizeof(hook)))
+				r = -EFAULT;
+			else
+				r = kvmi_ioctl_hook(kvm, &hook);
+		}
+		break;
+	case KVM_INTROSPECTION_UNHOOK:
+		if (enable_introspection)
+			r = kvmi_ioctl_unhook(kvm);
+		else
+			r = -EPERM;
+		break;
+#endif /* CONFIG_KVM_INTROSPECTION */
 	default:
 		r = kvm_arch_vm_ioctl(filp, ioctl, arg);
 	}
