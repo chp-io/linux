@@ -67,5 +67,8 @@ int kvmi_arch_cmd_vcpu_get_registers(struct kvm_vcpu *vcpu,
 				const struct kvmi_vcpu_get_registers *req,
 				struct kvmi_vcpu_get_registers_reply **dest,
 				size_t *dest_size);
+int kvmi_arch_cmd_vcpu_get_cpuid(struct kvm_vcpu *vcpu,
+				 const struct kvmi_vcpu_get_cpuid *req,
+				 struct kvmi_vcpu_get_cpuid_reply *rpl);
 
 #endif
