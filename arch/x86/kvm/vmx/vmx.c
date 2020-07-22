@@ -4464,6 +4464,15 @@ static int vmx_set_ve_info(struct kvm_vcpu *vcpu, unsigned long ve_info,
 	return 0;
 }
 
+static int vmx_disable_ve(struct kvm_vcpu *vcpu)
+{
+	if (kvm_ve_supported)
+		secondary_exec_controls_clearbit(to_vmx(vcpu),
+						 SECONDARY_EXEC_EPT_VE);
+
+	return 0;
+}
+
 #define VMX_XSS_EXIT_BITMAP 0
 
 /*
@@ -8390,6 +8399,7 @@ static struct kvm_x86_ops vmx_x86_ops __initdata = {
 	.set_ept_view = vmx_set_ept_view,
 	.control_ept_view = vmx_control_ept_view,
 	.set_ve_info = vmx_set_ve_info,
+	.disable_ve = vmx_disable_ve,
 };
 
 static __init int hardware_setup(void)
