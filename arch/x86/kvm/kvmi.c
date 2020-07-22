@@ -1464,3 +1464,22 @@ int kvmi_arch_cmd_control_ept_view(struct kvm_vcpu *vcpu, u16 view,
 
 	return kvm_x86_ops.control_ept_view(vcpu, view, visible);
 }
+
+int kvmi_arch_cmd_set_ve_info(struct kvm_vcpu *vcpu, u64 gpa,
+			      bool trigger_vmexit)
+{
+	unsigned long ve_info = (unsigned long) gpa;
+
+	if (!kvm_x86_ops.set_ve_info)
+		return -KVM_EINVAL;
+
+	return kvm_x86_ops.set_ve_info(vcpu, ve_info, trigger_vmexit);
+}
+
+int kvmi_arch_cmd_disable_ve(struct kvm_vcpu *vcpu)
+{
+	if (!kvm_x86_ops.disable_ve)
+		return 0;
+
+	return kvm_x86_ops.disable_ve(vcpu);
+}

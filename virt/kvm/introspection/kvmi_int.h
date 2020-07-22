@@ -151,5 +151,8 @@ u16 kvmi_arch_cmd_get_ept_view(struct kvm_vcpu *vcpu);
 int kvmi_arch_cmd_set_ept_view(struct kvm_vcpu *vcpu, u16 view);
 int kvmi_arch_cmd_control_ept_view(struct kvm_vcpu *vcpu, u16 view,
 				   bool visible);
+int kvmi_arch_cmd_set_ve_info(struct kvm_vcpu *vcpu, u64 gpa,
+			      bool trigger_vmexit);
+int kvmi_arch_cmd_disable_ve(struct kvm_vcpu *vcpu);
 
 #endif
