@@ -88,6 +88,7 @@ int kvmi_cmd_vcpu_set_registers(struct kvm_vcpu *vcpu,
 int kvmi_cmd_set_page_access(struct kvm_introspection *kvmi,
 			     const struct kvmi_msg_hdr *msg,
 			     const struct kvmi_vm_set_page_access *req);
+int kvmi_cmd_set_page_sve(struct kvm *kvm, gpa_t gpa, u16 view, bool suppress);
 bool kvmi_restricted_page_access(struct kvm_introspection *kvmi, gpa_t gpa,
 				 u8 access, u16 view);
 bool kvmi_pf_event(struct kvm_vcpu *vcpu, gpa_t gpa, gva_t gva, u8 access);

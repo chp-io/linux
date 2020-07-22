@@ -1214,6 +1214,7 @@ static const struct {
 	{ KVMI_PAGE_ACCESS_R, KVM_PAGE_TRACK_PREREAD },
 	{ KVMI_PAGE_ACCESS_W, KVM_PAGE_TRACK_PREWRITE },
 	{ KVMI_PAGE_ACCESS_X, KVM_PAGE_TRACK_PREEXEC },
+	{ KVMI_PAGE_SVE,      KVM_PAGE_TRACK_SVE },
 };
 
 void kvmi_arch_update_page_tracking(struct kvm *kvm,

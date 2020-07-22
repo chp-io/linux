@@ -28,7 +28,7 @@ static const u8 rwx_access = KVMI_PAGE_ACCESS_R |
 			     KVMI_PAGE_ACCESS_X;
 static const u8 full_access = KVMI_PAGE_ACCESS_R |
 			     KVMI_PAGE_ACCESS_W |
-			     KVMI_PAGE_ACCESS_X;
+			     KVMI_PAGE_ACCESS_X | KVMI_PAGE_SVE;
 
 void *kvmi_msg_alloc(void)
 {
@@ -1446,4 +1446,31 @@ bool kvmi_tracked_gfn(struct kvm_vcpu *vcpu, gfn_t gfn)
 	kvmi_put(vcpu->kvm);
 
 	return ret;
+}
+
+int kvmi_cmd_set_page_sve(struct kvm *kvm, gpa_t gpa, u16 view, bool suppress)
+{
+	struct kvmi_mem_access *m;
+	u8 mask = KVMI_PAGE_SVE;
+	bool used = false;
+	int err = 0;
+
+	m = kmem_cache_zalloc(radix_cache, GFP_KERNEL);
+	if (!m)
+		return -KVM_ENOMEM;
+
+	m->gfn = gpa_to_gfn(gpa);
+	m->access = suppress ? KVMI_PAGE_SVE : 0;
+
+	if (radix_tree_preload(GFP_KERNEL))
+		err = -KVM_ENOMEM;
+	else
+		kvmi_set_mem_access(kvm, m, mask, view, &used);
+
+	radix_tree_preload_end();
+
+	if (!used)
+		kmem_cache_free(radix_cache, m);
+
+	return err;
 }

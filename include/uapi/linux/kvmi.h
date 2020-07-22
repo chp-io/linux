@@ -55,6 +55,8 @@ enum {
 	KVMI_VCPU_SET_VE_INFO        = 29,
 	KVMI_VCPU_DISABLE_VE         = 30,
 
+	KVMI_VM_SET_PAGE_SVE = 31,
+
 	KVMI_NUM_MESSAGES
 };
 
@@ -84,6 +86,7 @@ enum {
 	KVMI_PAGE_ACCESS_R = 1 << 0,
 	KVMI_PAGE_ACCESS_W = 1 << 1,
 	KVMI_PAGE_ACCESS_X = 1 << 2,
+	KVMI_PAGE_SVE      = 1 << 3,
 };
 
 struct kvmi_msg_hdr {
