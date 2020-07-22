@@ -1168,6 +1168,7 @@ struct kvm_x86_ops {
 	 * the implementation may choose to ignore if appropriate.
 	 */
 	void (*tlb_flush_gva)(struct kvm_vcpu *vcpu, gva_t addr);
+	void (*clear_page)(void *page);
 
 	/*
 	 * Flush any TLB entries created by the guest.  Like tlb_flush_gva(),
