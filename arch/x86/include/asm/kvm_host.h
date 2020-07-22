@@ -243,6 +243,8 @@ enum x86_intercept_stage;
 				 PFERR_WRITE_MASK |		\
 				 PFERR_PRESENT_MASK)
 
+#define KVM_MAX_EPT_VIEWS	3
+
 /* apic attention bits */
 #define KVM_APIC_CHECK_VAPIC	0
 /*
@@ -348,6 +350,9 @@ struct kvm_mmu_page {
 	 */
 	union kvm_mmu_page_role role;
 	gfn_t gfn;
+
+	/* The view this shadow page belongs to */
+	u16 view;
 
 	u64 *spt;
 	/* hold the gfn of each spte inside spt */
@@ -936,7 +941,7 @@ struct kvm_arch {
 	unsigned long n_max_mmu_pages;
 	unsigned int indirect_shadow_pages;
 	u8 mmu_valid_gen;
-	struct hlist_head mmu_page_hash[KVM_NUM_MMU_PAGES];
+	struct hlist_head mmu_page_hash[KVM_MAX_EPT_VIEWS][KVM_NUM_MMU_PAGES];
 	/*
 	 * Hash table of struct kvm_mmu_page.
 	 */

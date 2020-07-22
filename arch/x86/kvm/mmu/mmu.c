@@ -2349,14 +2349,14 @@ static void kvm_mmu_commit_zap_page(struct kvm *kvm,
 				    struct list_head *invalid_list);
 
 
-#define for_each_valid_sp(_kvm, _sp, _gfn)				\
+#define for_each_valid_sp(_kvm, _sp, _gfn, view)			\
 	hlist_for_each_entry(_sp,					\
-	  &(_kvm)->arch.mmu_page_hash[kvm_page_table_hashfn(_gfn)], hash_link) \
+	  &(_kvm)->arch.mmu_page_hash[view][kvm_page_table_hashfn(_gfn)], hash_link) \
 		if (is_obsolete_sp((_kvm), (_sp))) {			\
 		} else
 
 #define for_each_gfn_indirect_valid_sp(_kvm, _sp, _gfn)			\
-	for_each_valid_sp(_kvm, _sp, _gfn)				\
+	for_each_valid_sp(_kvm, _sp, _gfn, 0)				\
 		if ((_sp)->gfn != (_gfn) || (_sp)->role.direct) {} else
 
 static inline bool is_ept_sp(struct kvm_mmu_page *sp)
@@ -2564,7 +2564,8 @@ static struct kvm_mmu_page *kvm_mmu_get_page(struct kvm_vcpu *vcpu,
 					     gva_t gaddr,
 					     unsigned level,
 					     int direct,
-					     unsigned int access)
+					     unsigned int access,
+					     u16 view)
 {
 	union kvm_mmu_page_role role;
 	unsigned quadrant;
@@ -2587,7 +2588,7 @@ static struct kvm_mmu_page *kvm_mmu_get_page(struct kvm_vcpu *vcpu,
 		quadrant &= (1 << ((PT32_PT_BITS - PT64_PT_BITS) * level)) - 1;
 		role.quadrant = quadrant;
 	}
-	for_each_valid_sp(vcpu->kvm, sp, gfn) {
+	for_each_valid_sp(vcpu->kvm, sp, gfn, view) {
 		if (sp->gfn != gfn) {
 			collisions++;
 			continue;
@@ -2624,9 +2625,10 @@ static struct kvm_mmu_page *kvm_mmu_get_page(struct kvm_vcpu *vcpu,
 
 	sp->gfn = gfn;
 	sp->role = role;
+	sp->view = view;
 	pg_hash = kvm_page_table_hashfn(gfn);
 	hlist_add_head(&sp->hash_link,
-		&vcpu->kvm->arch.mmu_page_hash[pg_hash]);
+		&vcpu->kvm->arch.mmu_page_hash[view][pg_hash]);
 	if (!direct) {
 		/*
 		 * we should do write protection before syncing pages
@@ -3463,7 +3465,8 @@ static int __direct_map(struct kvm_vcpu *vcpu, gpa_t gpa, int write,
 		drop_large_spte(vcpu, it.sptep);
 		if (!is_shadow_present_pte(*it.sptep)) {
 			sp = kvm_mmu_get_page(vcpu, base_gfn, it.addr,
-					      it.level - 1, true, ACC_ALL);
+					      it.level - 1, true, ACC_ALL,
+					      kvm_get_ept_view(vcpu));
 
 			link_shadow_page(vcpu, it.sptep, sp);
 			if (account_disallowed_nx_lpage)
@@ -3788,7 +3791,7 @@ static int mmu_check_root(struct kvm_vcpu *vcpu, gfn_t root_gfn)
 }
 
 static hpa_t mmu_alloc_root(struct kvm_vcpu *vcpu, gfn_t gfn, gva_t gva,
-			    u8 level, bool direct)
+			    u8 level, bool direct, u16 view)
 {
 	struct kvm_mmu_page *sp;
 
@@ -3798,7 +3801,7 @@ static hpa_t mmu_alloc_root(struct kvm_vcpu *vcpu, gfn_t gfn, gva_t gva,
 		spin_unlock(&vcpu->kvm->mmu_lock);
 		return INVALID_PAGE;
 	}
-	sp = kvm_mmu_get_page(vcpu, gfn, gva, level, direct, ACC_ALL);
+	sp = kvm_mmu_get_page(vcpu, gfn, gva, level, direct, ACC_ALL, view);
 	++sp->root_count;
 
 	spin_unlock(&vcpu->kvm->mmu_lock);
@@ -3809,19 +3812,24 @@ static int mmu_alloc_direct_roots(struct kvm_vcpu *vcpu)
 {
 	u8 shadow_root_level = vcpu->arch.mmu->shadow_root_level;
 	hpa_t root;
-	unsigned i;
+
+	u16 i;
 
 	if (shadow_root_level >= PT64_ROOT_4LEVEL) {
-		root = mmu_alloc_root(vcpu, 0, 0, shadow_root_level, true);
-		if (!VALID_PAGE(root))
-			return -ENOSPC;
-		vcpu->arch.mmu->root_hpa = root;
+		for (i = 0; i < KVM_MAX_EPT_VIEWS; i++) {
+			root = mmu_alloc_root(vcpu, 0, PAGE_SIZE * i,
+					      shadow_root_level, true, i);
+			if (!VALID_PAGE(root))
+				return -ENOSPC;
+			if (i == 0)
+				vcpu->arch.mmu->root_hpa = root;
+		}
 	} else if (shadow_root_level == PT32E_ROOT_LEVEL) {
 		for (i = 0; i < 4; ++i) {
 			MMU_WARN_ON(VALID_PAGE(vcpu->arch.mmu->pae_root[i]));
 
 			root = mmu_alloc_root(vcpu, i << (30 - PAGE_SHIFT),
-					      i << 30, PT32_ROOT_LEVEL, true);
+					      i << 30, PT32_ROOT_LEVEL, true, 0);
 			if (!VALID_PAGE(root))
 				return -ENOSPC;
 			vcpu->arch.mmu->pae_root[i] = root | PT_PRESENT_MASK;
@@ -3857,7 +3865,8 @@ static int mmu_alloc_shadow_roots(struct kvm_vcpu *vcpu)
 		MMU_WARN_ON(VALID_PAGE(vcpu->arch.mmu->root_hpa));
 
 		root = mmu_alloc_root(vcpu, root_gfn, 0,
-				      vcpu->arch.mmu->shadow_root_level, false);
+				      vcpu->arch.mmu->shadow_root_level, false,
+				      0);
 		if (!VALID_PAGE(root))
 			return -ENOSPC;
 		vcpu->arch.mmu->root_hpa = root;
@@ -3887,7 +3896,7 @@ static int mmu_alloc_shadow_roots(struct kvm_vcpu *vcpu)
 		}
 
 		root = mmu_alloc_root(vcpu, root_gfn, i << 30,
-				      PT32_ROOT_LEVEL, false);
+				      PT32_ROOT_LEVEL, false, 0);
 		if (!VALID_PAGE(root))
 			return -ENOSPC;
 		vcpu->arch.mmu->pae_root[i] = root | pm_mask;
