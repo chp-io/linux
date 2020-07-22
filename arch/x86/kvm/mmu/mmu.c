@@ -1231,9 +1231,9 @@ static void account_shadowed(struct kvm *kvm, struct kvm_mmu_page *sp)
 	/* the non-leaf shadow pages are keeping readonly. */
 	if (sp->role.level > PG_LEVEL_4K) {
 		kvm_slot_page_track_add_page(kvm, slot, gfn,
-					     KVM_PAGE_TRACK_PREWRITE);
+					     KVM_PAGE_TRACK_PREWRITE, 0);
 		kvm_slot_page_track_add_page(kvm, slot, gfn,
-					     KVM_PAGE_TRACK_WRITE);
+					     KVM_PAGE_TRACK_WRITE, 0);
 		return;
 	}
 
@@ -1263,9 +1263,9 @@ static void unaccount_shadowed(struct kvm *kvm, struct kvm_mmu_page *sp)
 	slot = __gfn_to_memslot(slots, gfn);
 	if (sp->role.level > PG_LEVEL_4K) {
 		kvm_slot_page_track_remove_page(kvm, slot, gfn,
-						KVM_PAGE_TRACK_PREWRITE);
+						KVM_PAGE_TRACK_PREWRITE, 0);
 		kvm_slot_page_track_remove_page(kvm, slot, gfn,
-						KVM_PAGE_TRACK_WRITE);
+						KVM_PAGE_TRACK_WRITE, 0);
 		return;
 	}
 
@@ -1617,40 +1617,52 @@ static bool spte_exec_protect(u64 *sptep)
 
 static bool __rmap_write_protect(struct kvm *kvm,
 				 struct kvm_rmap_head *rmap_head,
-				 bool pt_protect)
+				 bool pt_protect, u16 view)
 {
 	u64 *sptep;
 	struct rmap_iterator iter;
 	bool flush = false;
+	struct kvm_mmu_page *sp;
 
-	for_each_rmap_spte(rmap_head, &iter, sptep)
-		flush |= spte_write_protect(sptep, pt_protect);
+	for_each_rmap_spte(rmap_head, &iter, sptep) {
+		sp = page_header(__pa(sptep));
+		if (view == 0 || (view > 0 && sp->view == view))
+			flush |= spte_write_protect(sptep, pt_protect);
+	}
 
 	return flush;
 }
 
 static bool __rmap_read_protect(struct kvm *kvm,
-				struct kvm_rmap_head *rmap_head)
+				struct kvm_rmap_head *rmap_head, u16 view)
 {
 	struct rmap_iterator iter;
+	struct kvm_mmu_page *sp;
 	bool flush = false;
 	u64 *sptep;
 
-	for_each_rmap_spte(rmap_head, &iter, sptep)
-		flush |= spte_read_protect(sptep);
+	for_each_rmap_spte(rmap_head, &iter, sptep) {
+		sp = page_header(__pa(sptep));
+		if (view == 0 || (view > 0 && sp->view == view))
+			flush |= spte_read_protect(sptep);
+	}
 
 	return flush;
 }
 
 static bool __rmap_exec_protect(struct kvm *kvm,
-				struct kvm_rmap_head *rmap_head)
+				struct kvm_rmap_head *rmap_head, u16 view)
 {
 	struct rmap_iterator iter;
+	struct kvm_mmu_page *sp;
 	bool flush = false;
 	u64 *sptep;
 
-	for_each_rmap_spte(rmap_head, &iter, sptep)
-		flush |= spte_exec_protect(sptep);
+	for_each_rmap_spte(rmap_head, &iter, sptep) {
+		sp = page_header(__pa(sptep));
+		if (view == 0 || (view > 0 && sp->view == view))
+			flush |= spte_exec_protect(sptep);
+	}
 
 	return flush;
 }
@@ -1745,7 +1757,7 @@ static void kvm_mmu_write_protect_pt_masked(struct kvm *kvm,
 	while (mask) {
 		rmap_head = __gfn_to_rmap(slot->base_gfn + gfn_offset + __ffs(mask),
 					  PG_LEVEL_4K, slot);
-		__rmap_write_protect(kvm, rmap_head, false);
+		__rmap_write_protect(kvm, rmap_head, false, 0);
 
 		/* clear the first set bit */
 		mask &= mask - 1;
@@ -1816,7 +1828,8 @@ int kvm_arch_write_log_dirty(struct kvm_vcpu *vcpu, gpa_t l2_gpa)
 }
 
 bool kvm_mmu_slot_gfn_write_protect(struct kvm *kvm,
-				    struct kvm_memory_slot *slot, u64 gfn)
+				    struct kvm_memory_slot *slot, u64 gfn,
+				    u16 view)
 {
 	struct kvm_rmap_head *rmap_head;
 	int i;
@@ -1824,14 +1837,16 @@ bool kvm_mmu_slot_gfn_write_protect(struct kvm *kvm,
 
 	for (i = PG_LEVEL_4K; i <= KVM_MAX_HUGEPAGE_LEVEL; ++i) {
 		rmap_head = __gfn_to_rmap(gfn, i, slot);
-		write_protected |= __rmap_write_protect(kvm, rmap_head, true);
+		write_protected |= __rmap_write_protect(kvm, rmap_head, true,
+							view);
 	}
 
 	return write_protected;
 }
 
 bool kvm_mmu_slot_gfn_read_protect(struct kvm *kvm,
-				   struct kvm_memory_slot *slot, u64 gfn)
+				   struct kvm_memory_slot *slot, u64 gfn,
+				   u16 view)
 {
 	struct kvm_rmap_head *rmap_head;
 	bool read_protected = false;
@@ -1839,14 +1854,15 @@ bool kvm_mmu_slot_gfn_read_protect(struct kvm *kvm,
 
 	for (i = PG_LEVEL_4K; i <= KVM_MAX_HUGEPAGE_LEVEL; ++i) {
 		rmap_head = __gfn_to_rmap(gfn, i, slot);
-		read_protected |= __rmap_read_protect(kvm, rmap_head);
+		read_protected |= __rmap_read_protect(kvm, rmap_head, view);
 	}
 
 	return read_protected;
 }
 
 bool kvm_mmu_slot_gfn_exec_protect(struct kvm *kvm,
-				   struct kvm_memory_slot *slot, u64 gfn)
+				   struct kvm_memory_slot *slot, u64 gfn,
+				   u16 view)
 {
 	struct kvm_rmap_head *rmap_head;
 	bool exec_protected = false;
@@ -1854,7 +1870,7 @@ bool kvm_mmu_slot_gfn_exec_protect(struct kvm *kvm,
 
 	for (i = PG_LEVEL_4K; i <= KVM_MAX_HUGEPAGE_LEVEL; ++i) {
 		rmap_head = __gfn_to_rmap(gfn, i, slot);
-		exec_protected |= __rmap_exec_protect(kvm, rmap_head);
+		exec_protected |= __rmap_exec_protect(kvm, rmap_head, view);
 	}
 
 	return exec_protected;
@@ -1865,7 +1881,7 @@ static bool rmap_write_protect(struct kvm_vcpu *vcpu, u64 gfn)
 	struct kvm_memory_slot *slot;
 
 	slot = kvm_vcpu_gfn_to_memslot(vcpu, gfn);
-	return kvm_mmu_slot_gfn_write_protect(vcpu->kvm, slot, gfn);
+	return kvm_mmu_slot_gfn_write_protect(vcpu->kvm, slot, gfn, 0);
 }
 
 static bool kvm_zap_rmapp(struct kvm *kvm, struct kvm_rmap_head *rmap_head)
@@ -6008,7 +6024,7 @@ void kvm_zap_gfn_range(struct kvm *kvm, gfn_t gfn_start, gfn_t gfn_end)
 static bool slot_rmap_write_protect(struct kvm *kvm,
 				    struct kvm_rmap_head *rmap_head)
 {
-	return __rmap_write_protect(kvm, rmap_head, false);
+	return __rmap_write_protect(kvm, rmap_head, false, 0);
 }
 
 void kvm_mmu_slot_remove_write_access(struct kvm *kvm,
