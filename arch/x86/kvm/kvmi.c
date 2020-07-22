@@ -1383,6 +1383,7 @@ void kvmi_arch_features(struct kvmi_features *feat)
 			kvm_x86_ops.get_vmfunc_status();
 	feat->eptp = kvm_x86_ops.get_eptp_switching_status &&
 			kvm_x86_ops.get_eptp_switching_status();
+	feat->ve = kvm_ve_supported;
 }
 
 bool kvmi_arch_start_singlestep(struct kvm_vcpu *vcpu)

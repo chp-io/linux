@@ -459,6 +459,7 @@ static void test_cmd_get_version(void)
 	pr_info("\tsinglestep: %u\n", features.singlestep);
 	pr_info("\tvmfunc: %u\n", features.vmfunc);
 	pr_info("\teptp: %u\n", features.eptp);
+	pr_info("\tve: %u\n", features.ve);
 }
 
 static void cmd_vm_check_command(__u16 id, __u16 padding, int expected_err)
