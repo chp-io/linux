@@ -149,5 +149,7 @@ bool kvmi_arch_stop_singlestep(struct kvm_vcpu *vcpu);
 gpa_t kvmi_arch_cmd_translate_gva(struct kvm_vcpu *vcpu, gva_t gva);
 u16 kvmi_arch_cmd_get_ept_view(struct kvm_vcpu *vcpu);
 int kvmi_arch_cmd_set_ept_view(struct kvm_vcpu *vcpu, u16 view);
+int kvmi_arch_cmd_control_ept_view(struct kvm_vcpu *vcpu, u16 view,
+				   bool visible);
 
 #endif

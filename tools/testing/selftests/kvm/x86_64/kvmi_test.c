@@ -56,6 +56,7 @@ struct vcpu_worker_data {
 	bool stop;
 	bool shutdown;
 	bool restart_on_shutdown;
+	bool run_guest_once;
 };
 
 static struct kvmi_features features;
@@ -72,6 +73,7 @@ enum {
 	GUEST_TEST_HYPERCALL,
 	GUEST_TEST_MSR,
 	GUEST_TEST_PF,
+	GUEST_TEST_VMFUNC,
 	GUEST_TEST_XSETBV,
 };
 
@@ -128,6 +130,13 @@ static void guest_msr_test(void)
 static void guest_pf_test(void)
 {
 	*((uint8_t *)test_gva) = READ_ONCE(test_write_pattern);
+}
+
+static void guest_vmfunc_test(void)
+{
+	asm volatile("mov $0, %rax");
+	asm volatile("mov $1, %rcx");
+	asm volatile(".byte 0x0f,0x01,0xd4");
 }
 
 /* from fpu/internal.h */
@@ -192,6 +201,9 @@ static void guest_code(void)
 			break;
 		case GUEST_TEST_PF:
 			guest_pf_test();
+			break;
+		case GUEST_TEST_VMFUNC:
+			guest_vmfunc_test();
 			break;
 		case GUEST_TEST_XSETBV:
 			guest_xsetbv_test();
@@ -777,6 +789,7 @@ static void test_memory_access(struct kvm_vm *vm)
 static void *vcpu_worker(void *data)
 {
 	struct vcpu_worker_data *ctx = data;
+	bool first_run = false;
 	struct kvm_run *run;
 
 	run = vcpu_state(ctx->vm, ctx->vcpu_id);
@@ -805,6 +818,13 @@ static void *vcpu_worker(void *data)
 		if (HOST_SEND_TEST(uc)) {
 			test_id = READ_ONCE(ctx->test_id);
 			sync_global_to_guest(ctx->vm, test_id);
+			if (run->exit_reason == KVM_EXIT_IO &&
+			    ctx->run_guest_once) {
+				if (!first_run)
+					first_run = true;
+				else
+					break;
+			}
 		}
 	}
 
@@ -2140,6 +2160,103 @@ static void test_cmd_vcpu_set_ept_view(struct kvm_vm *vm)
 	set_ept_view(vm, old_view);
 }
 
+static void check_expected_view(struct kvm_vm *vm,
+				__u16 check_view)
+{
+	__u16 found_view = get_ept_view(vm);
+
+	TEST_ASSERT(check_view == found_view,
+			"Unexpected EPT view, found ept view (%u), expected view (%u)\n",
+			found_view, check_view);
+}
+
+static void test_guest_switch_to_invisible_view(struct kvm_vm *vm)
+{
+	struct vcpu_worker_data data = {
+		.vm = vm,
+		.vcpu_id = VCPU_ID,
+		.shutdown = true,
+		.test_id = GUEST_TEST_VMFUNC,
+	};
+	pthread_t vcpu_thread;
+	struct kvm_regs regs;
+	__u16 view = 0;
+
+	check_expected_view(vm, view);
+
+	vcpu_thread = start_vcpu_worker(&data);
+	wait_vcpu_worker(vcpu_thread);
+
+	/*
+	 * Move to the next instruction, so the guest would not
+	 * re-execute VMFUNC again when vcpu_run() is called.
+	 */
+	vcpu_regs_get(vm, VCPU_ID, &regs);
+	regs.rip += 3;
+	vcpu_regs_set(vm, VCPU_ID, &regs);
+
+	check_expected_view(vm, view);
+}
+
+static void test_control_ept_view(struct kvm_vm *vm, __u16 view, bool visible)
+{
+	struct {
+		struct kvmi_msg_hdr hdr;
+		struct kvmi_vcpu_hdr vcpu_hdr;
+		struct kvmi_vcpu_control_ept_view cmd;
+	} req = {};
+
+	req.cmd.view = view;
+	req.cmd.visible = visible;
+
+	test_vcpu0_command(vm, KVMI_VCPU_CONTROL_EPT_VIEW,
+			   &req.hdr, sizeof(req), NULL, 0);
+}
+
+static void enable_ept_view_visibility(struct kvm_vm *vm, __u16 view)
+{
+	test_control_ept_view(vm, view, true);
+}
+
+static void disable_ept_view_visibility(struct kvm_vm *vm, __u16 view)
+{
+	test_control_ept_view(vm, view, false);
+}
+
+static void test_guest_switch_to_visible_view(struct kvm_vm *vm)
+{
+	struct vcpu_worker_data data = {
+		.vm = vm,
+		.vcpu_id = VCPU_ID,
+		.run_guest_once = true,
+		.test_id = GUEST_TEST_VMFUNC,
+	};
+	pthread_t vcpu_thread;
+	__u16 old_view = 0, new_view = 1;
+
+	enable_ept_view_visibility(vm, new_view);
+
+	vcpu_thread = start_vcpu_worker(&data);
+	wait_vcpu_worker(vcpu_thread);
+
+	check_expected_view(vm, new_view);
+
+	disable_ept_view_visibility(vm, new_view);
+
+	set_ept_view(vm, old_view);
+}
+
+static void test_cmd_vcpu_vmfunc(struct kvm_vm *vm)
+{
+	if (!features.vmfunc) {
+		print_skip("EPT views not supported");
+		return;
+	}
+
+	test_guest_switch_to_invisible_view(vm);
+	test_guest_switch_to_visible_view(vm);
+}
+
 static void test_introspection(struct kvm_vm *vm)
 {
 	srandom(time(0));
@@ -2178,6 +2295,7 @@ static void test_introspection(struct kvm_vm *vm)
 	test_cmd_translate_gva(vm);
 	test_cmd_vcpu_get_ept_view(vm);
 	test_cmd_vcpu_set_ept_view(vm);
+	test_cmd_vcpu_vmfunc(vm);
 
 	unhook_introspection(vm);
 }
