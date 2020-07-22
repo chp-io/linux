@@ -1187,14 +1187,20 @@ int kvmi_cmd_set_page_access(struct kvm_introspection *kvmi,
 	const struct kvmi_page_access_entry *end = req->entries + req->count;
 	int ec = 0;
 
-	if (req->padding1 || req->padding2)
+	if (req->padding)
 		return -KVM_EINVAL;
 
 	if (msg->size < struct_size(req, entries, req->count))
 		return -KVM_EINVAL;
 
+	if (!is_valid_view(req->view))
+		return -KVM_EINVAL;
+
+	if (req->view != 0 && !kvm_eptp_switching_supported)
+		return -KVM_EOPNOTSUPP;
+
 	for (; entry < end; entry++) {
-		int r = set_page_access_entry(kvmi, 0, entry);
+		int r = set_page_access_entry(kvmi, req->view, entry);
 
 		if (r && !ec)
 			ec = r;
