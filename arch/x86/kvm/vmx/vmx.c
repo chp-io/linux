@@ -8002,6 +8002,13 @@ static bool vmx_get_eptp_switching_status(void)
 	return kvm_eptp_switching_supported;
 }
 
+static u16 vmx_get_ept_view(struct kvm_vcpu *vcpu)
+{
+	const struct vcpu_vmx *vmx = to_vmx(vcpu);
+
+	return vmx->view;
+}
+
 static struct kvm_x86_ops vmx_x86_ops __initdata = {
 	.hardware_unsetup = hardware_unsetup,
 
@@ -8145,6 +8152,7 @@ static struct kvm_x86_ops vmx_x86_ops __initdata = {
 	.control_singlestep = vmx_control_singlestep,
 	.get_vmfunc_status = vmx_get_vmfunc_status,
 	.get_eptp_switching_status = vmx_get_eptp_switching_status,
+	.get_ept_view = vmx_get_ept_view,
 };
 
 static __init int hardware_setup(void)
