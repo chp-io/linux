@@ -142,5 +142,6 @@ void kvmi_arch_features(struct kvmi_features *feat);
 bool kvmi_arch_start_singlestep(struct kvm_vcpu *vcpu);
 bool kvmi_arch_stop_singlestep(struct kvm_vcpu *vcpu);
 gpa_t kvmi_arch_cmd_translate_gva(struct kvm_vcpu *vcpu, gva_t gva);
+u16 kvmi_arch_cmd_get_ept_view(struct kvm_vcpu *vcpu);
 
 #endif

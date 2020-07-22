@@ -1417,3 +1417,8 @@ out:
 
 	return ret;
 }
+
+u16 kvmi_arch_cmd_get_ept_view(struct kvm_vcpu *vcpu)
+{
+	return kvm_get_ept_view(vcpu);
+}
