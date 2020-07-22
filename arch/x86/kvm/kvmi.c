@@ -1423,3 +1423,12 @@ u16 kvmi_arch_cmd_get_ept_view(struct kvm_vcpu *vcpu)
 {
 	return kvm_get_ept_view(vcpu);
 }
+
+int kvmi_arch_cmd_set_ept_view(struct kvm_vcpu *vcpu, u16 view)
+{
+
+	if (!kvm_x86_ops.set_ept_view)
+		return -KVM_EINVAL;
+
+	return kvm_x86_ops.set_ept_view(vcpu, view);
+}

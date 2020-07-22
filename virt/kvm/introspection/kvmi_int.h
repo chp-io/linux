@@ -32,6 +32,11 @@ static inline bool is_event_enabled(struct kvm_vcpu *vcpu, int event)
 	return test_bit(event, VCPUI(vcpu)->ev_enable_mask);
 }
 
+static inline bool is_valid_view(unsigned short view)
+{
+	return (view < KVM_MAX_EPT_VIEWS);
+}
+
 /* kvmi_msg.c */
 bool kvmi_sock_get(struct kvm_introspection *kvmi, int fd);
 void kvmi_sock_shutdown(struct kvm_introspection *kvmi);
@@ -143,5 +148,6 @@ bool kvmi_arch_start_singlestep(struct kvm_vcpu *vcpu);
 bool kvmi_arch_stop_singlestep(struct kvm_vcpu *vcpu);
 gpa_t kvmi_arch_cmd_translate_gva(struct kvm_vcpu *vcpu, gva_t gva);
 u16 kvmi_arch_cmd_get_ept_view(struct kvm_vcpu *vcpu);
+int kvmi_arch_cmd_set_ept_view(struct kvm_vcpu *vcpu, u16 view);
 
 #endif

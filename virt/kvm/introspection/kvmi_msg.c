@@ -674,6 +674,25 @@ static int handle_vcpu_get_ept_view(const struct kvmi_vcpu_msg_job *job,
 	return kvmi_msg_vcpu_reply(job, msg, 0, &rpl, sizeof(rpl));
 }
 
+static int handle_vcpu_set_ept_view(const struct kvmi_vcpu_msg_job *job,
+				    const struct kvmi_msg_hdr *msg,
+				    const void *_req)
+{
+	const struct kvmi_vcpu_set_ept_view *req = _req;
+	int ec;
+
+	if (req->padding1 || req->padding2)
+		ec = -KVM_EINVAL;
+	else if (!is_valid_view(req->view))
+		ec = -KVM_EINVAL;
+	else if (!kvm_eptp_switching_supported)
+		ec = -KVM_EOPNOTSUPP;
+	else
+		ec = kvmi_arch_cmd_set_ept_view(job->vcpu, req->view);
+
+	return kvmi_msg_vcpu_reply(job, msg, ec, NULL, 0);
+}
+
 /*
  * These functions are executed from the vCPU thread. The receiving thread
  * passes the messages using a newly allocated 'struct kvmi_vcpu_msg_job'
@@ -695,6 +714,7 @@ static int(*const msg_vcpu[])(const struct kvmi_vcpu_msg_job *,
 	[KVMI_VCPU_GET_XCR]            = handle_vcpu_get_xcr,
 	[KVMI_VCPU_GET_XSAVE]          = handle_vcpu_get_xsave,
 	[KVMI_VCPU_INJECT_EXCEPTION]   = handle_vcpu_inject_exception,
+	[KVMI_VCPU_SET_EPT_VIEW]       = handle_vcpu_set_ept_view,
 	[KVMI_VCPU_SET_REGISTERS]      = handle_vcpu_set_registers,
 	[KVMI_VCPU_SET_XSAVE]          = handle_vcpu_set_xsave,
 	[KVMI_VCPU_TRANSLATE_GVA]      = handle_vcpu_translate_gva,
