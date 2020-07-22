@@ -1197,7 +1197,7 @@ static const struct {
 
 void kvmi_arch_update_page_tracking(struct kvm *kvm,
 				    struct kvm_memory_slot *slot,
-				    struct kvmi_mem_access *m)
+				    struct kvmi_mem_access *m, u16 view)
 {
 	struct kvmi_arch_mem_access *arch = &m->arch;
 	int i;
@@ -1217,12 +1217,12 @@ void kvmi_arch_update_page_tracking(struct kvm *kvm,
 			if (slot_tracked) {
 				kvm_slot_page_track_remove_page(kvm, slot,
 								m->gfn, mode,
-								0);
+								view);
 				clear_bit(slot->id, arch->active[mode]);
 			}
 		} else if (!slot_tracked) {
 			kvm_slot_page_track_add_page(kvm, slot, m->gfn, mode,
-						     0);
+						     view);
 			set_bit(slot->id, arch->active[mode]);
 		}
 	}
@@ -1256,7 +1256,8 @@ static bool is_pf_of_interest(struct kvm_vcpu *vcpu, gpa_t gpa, u8 access)
 	if (kvm_x86_ops.gpt_translation_fault(vcpu))
 		return false;
 
-	return kvmi_restricted_page_access(KVMI(vcpu->kvm), gpa, access);
+	return kvmi_restricted_page_access(KVMI(vcpu->kvm), gpa, access,
+					   kvm_get_ept_view(vcpu));
 }
 
 static bool handle_pf_event(struct kvm_vcpu *vcpu, gpa_t gpa, gva_t gva,

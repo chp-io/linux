@@ -69,7 +69,7 @@ struct kvm_introspection {
 
 	bool cleanup_on_unhook;
 
-	struct radix_tree_root access_tree;
+	struct radix_tree_root access_tree[KVMI_MAX_ACCESS_TREES];
 	rwlock_t access_tree_lock;
 };
 

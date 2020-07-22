@@ -258,20 +258,23 @@ static void kvmi_clear_mem_access(struct kvm *kvm)
 	struct kvm_introspection *kvmi = KVMI(kvm);
 	struct radix_tree_iter iter;
 	void **slot;
-	int idx;
+	int idx, view;
 
 	idx = srcu_read_lock(&kvm->srcu);
 	spin_lock(&kvm->mmu_lock);
 
-	radix_tree_for_each_slot(slot, &kvmi->access_tree, &iter, 0) {
-		struct kvmi_mem_access *m = *slot;
+	for (view = 0; view < KVMI_MAX_ACCESS_TREES; view++)
+		radix_tree_for_each_slot(slot, &kvmi->access_tree[view],
+					 &iter, 0) {
+			struct kvmi_mem_access *m = *slot;
 
-		m->access = full_access;
-		kvmi_arch_update_page_tracking(kvm, NULL, m);
+			m->access = full_access;
+			kvmi_arch_update_page_tracking(kvm, NULL, m, view);
 
-		radix_tree_iter_delete(&kvmi->access_tree, &iter, slot);
-		kmem_cache_free(radix_cache, m);
-	}
+			radix_tree_iter_delete(&kvmi->access_tree[view],
+					       &iter, slot);
+			kmem_cache_free(radix_cache, m);
+		}
 
 	spin_unlock(&kvm->mmu_lock);
 	srcu_read_unlock(&kvm->srcu, idx);
@@ -335,8 +338,9 @@ alloc_kvmi(struct kvm *kvm, const struct kvm_introspection_hook *hook)
 
 	atomic_set(&kvmi->ev_seq, 0);
 
-	INIT_RADIX_TREE(&kvmi->access_tree,
-			GFP_KERNEL & ~__GFP_DIRECT_RECLAIM);
+	for (i = 0; i < ARRAY_SIZE(kvmi->access_tree); i++)
+		INIT_RADIX_TREE(&kvmi->access_tree[i],
+				GFP_KERNEL & ~__GFP_DIRECT_RECLAIM);
 	rwlock_init(&kvmi->access_tree_lock);
 
 	kvm_for_each_vcpu(i, vcpu, kvm) {
@@ -1065,33 +1069,35 @@ bool kvmi_enter_guest(struct kvm_vcpu *vcpu)
 }
 
 static struct kvmi_mem_access *
-__kvmi_get_gfn_access(struct kvm_introspection *kvmi, const gfn_t gfn)
+__kvmi_get_gfn_access(struct kvm_introspection *kvmi, const gfn_t gfn, u16 view)
 {
-	return radix_tree_lookup(&kvmi->access_tree, gfn);
+	return radix_tree_lookup(&kvmi->access_tree[view], gfn);
 }
 
-static void kvmi_update_mem_access(struct kvm *kvm, struct kvmi_mem_access *m)
+static void kvmi_update_mem_access(struct kvm *kvm, struct kvmi_mem_access *m,
+				   u16 view)
 {
 	struct kvm_introspection *kvmi = KVMI(kvm);
 
-	kvmi_arch_update_page_tracking(kvm, NULL, m);
+	kvmi_arch_update_page_tracking(kvm, NULL, m, view);
 
 	if (m->access == full_access) {
-		radix_tree_delete(&kvmi->access_tree, m->gfn);
+		radix_tree_delete(&kvmi->access_tree[view], m->gfn);
 		kmem_cache_free(radix_cache, m);
 	}
 }
 
-static void kvmi_insert_mem_access(struct kvm *kvm, struct kvmi_mem_access *m)
+static void kvmi_insert_mem_access(struct kvm *kvm, struct kvmi_mem_access *m,
+				   u16 view)
 {
 	struct kvm_introspection *kvmi = KVMI(kvm);
 
-	radix_tree_insert(&kvmi->access_tree, m->gfn, m);
-	kvmi_arch_update_page_tracking(kvm, NULL, m);
+	radix_tree_insert(&kvmi->access_tree[view], m->gfn, m);
+	kvmi_arch_update_page_tracking(kvm, NULL, m, view);
 }
 
 static void kvmi_set_mem_access(struct kvm *kvm, struct kvmi_mem_access *m,
-				bool *used)
+				u16 view, bool *used)
 {
 	struct kvm_introspection *kvmi = KVMI(kvm);
 	struct kvmi_mem_access *found;
@@ -1101,12 +1107,12 @@ static void kvmi_set_mem_access(struct kvm *kvm, struct kvmi_mem_access *m,
 	spin_lock(&kvm->mmu_lock);
 	write_lock(&kvmi->access_tree_lock);
 
-	found = __kvmi_get_gfn_access(kvmi, m->gfn);
+	found = __kvmi_get_gfn_access(kvmi, m->gfn, view);
 	if (found) {
 		found->access = m->access;
-		kvmi_update_mem_access(kvm, found);
+		kvmi_update_mem_access(kvm, found, view);
 	} else if (m->access != full_access) {
-		kvmi_insert_mem_access(kvm, m);
+		kvmi_insert_mem_access(kvm, m, view);
 		*used = true;
 	}
 
@@ -1115,7 +1121,8 @@ static void kvmi_set_mem_access(struct kvm *kvm, struct kvmi_mem_access *m,
 	srcu_read_unlock(&kvm->srcu, idx);
 }
 
-static int kvmi_set_gfn_access(struct kvm *kvm, gfn_t gfn, u8 access)
+static int kvmi_set_gfn_access(struct kvm *kvm, gfn_t gfn, u8 access,
+			       u16 view)
 {
 	struct kvmi_mem_access *m;
 	bool used = false;
@@ -1131,7 +1138,7 @@ static int kvmi_set_gfn_access(struct kvm *kvm, gfn_t gfn, u8 access)
 	if (radix_tree_preload(GFP_KERNEL))
 		err = -KVM_ENOMEM;
 	else
-		kvmi_set_mem_access(kvm, m, &used);
+		kvmi_set_mem_access(kvm, m, view, &used);
 
 	radix_tree_preload_end();
 
@@ -1153,7 +1160,7 @@ static bool kvmi_is_visible_gfn(struct kvm *kvm, gfn_t gfn)
 	return visible;
 }
 
-static int set_page_access_entry(struct kvm_introspection *kvmi,
+static int set_page_access_entry(struct kvm_introspection *kvmi, u16 view,
 				 const struct kvmi_page_access_entry *entry)
 {
 	u8 unknown_bits = ~(KVMI_PAGE_ACCESS_R | KVMI_PAGE_ACCESS_W
@@ -1169,7 +1176,7 @@ static int set_page_access_entry(struct kvm_introspection *kvmi,
 	if (!kvmi_is_visible_gfn(kvm, gfn))
 		return entry->visible ? -KVM_EINVAL : 0;
 
-	return kvmi_set_gfn_access(kvm, gfn, entry->access);
+	return kvmi_set_gfn_access(kvm, gfn, entry->access, view);
 }
 
 int kvmi_cmd_set_page_access(struct kvm_introspection *kvmi,
@@ -1187,7 +1194,7 @@ int kvmi_cmd_set_page_access(struct kvm_introspection *kvmi,
 		return -KVM_EINVAL;
 
 	for (; entry < end; entry++) {
-		int r = set_page_access_entry(kvmi, entry);
+		int r = set_page_access_entry(kvmi, 0, entry);
 
 		if (r && !ec)
 			ec = r;
@@ -1197,12 +1204,12 @@ int kvmi_cmd_set_page_access(struct kvm_introspection *kvmi,
 }
 
 static int kvmi_get_gfn_access(struct kvm_introspection *kvmi, const gfn_t gfn,
-			       u8 *access)
+			       u8 *access, u16 view)
 {
 	struct kvmi_mem_access *m;
 
 	read_lock(&kvmi->access_tree_lock);
-	m = __kvmi_get_gfn_access(kvmi, gfn);
+	m = __kvmi_get_gfn_access(kvmi, gfn, view);
 	if (m)
 		*access = m->access;
 	read_unlock(&kvmi->access_tree_lock);
@@ -1211,12 +1218,13 @@ static int kvmi_get_gfn_access(struct kvm_introspection *kvmi, const gfn_t gfn,
 }
 
 bool kvmi_restricted_page_access(struct kvm_introspection *kvmi, gpa_t gpa,
-				 u8 access)
+				 u8 access, u16 view)
 {
 	u8 allowed_access;
 	int err;
 
-	err = kvmi_get_gfn_access(kvmi, gpa_to_gfn(gpa), &allowed_access);
+	err = kvmi_get_gfn_access(kvmi, gpa_to_gfn(gpa), &allowed_access, view);
+
 	if (err)
 		return false;
 
@@ -1264,10 +1272,14 @@ void kvmi_add_memslot(struct kvm *kvm, struct kvm_memory_slot *slot,
 
 	while (start < end) {
 		struct kvmi_mem_access *m;
+		u16 view;
 
-		m = __kvmi_get_gfn_access(kvmi, start);
-		if (m)
-			kvmi_arch_update_page_tracking(kvm, slot, m);
+		for (view = 0; view < KVMI_MAX_ACCESS_TREES; view++) {
+			m = __kvmi_get_gfn_access(kvmi, start, view);
+			if (m)
+				kvmi_arch_update_page_tracking(kvm, slot, m,
+							       view);
+		}
 		start++;
 	}
 
@@ -1289,14 +1301,18 @@ void kvmi_remove_memslot(struct kvm *kvm, struct kvm_memory_slot *slot)
 
 	while (start < end) {
 		struct kvmi_mem_access *m;
+		u16 view;
 
-		m = __kvmi_get_gfn_access(kvmi, start);
-		if (m) {
-			u8 prev_access = m->access;
+		for (view = 0; view < KVMI_MAX_ACCESS_TREES; view++) {
+			m = __kvmi_get_gfn_access(kvmi, start, view);
+			if (m) {
+				u8 prev_access = m->access;
 
-			m->access = full_access;
-			kvmi_arch_update_page_tracking(kvm, slot, m);
-			m->access = prev_access;
+				m->access = full_access;
+				kvmi_arch_update_page_tracking(kvm, slot, m,
+							       view);
+				m->access = prev_access;
+			}
 		}
 		start++;
 	}
@@ -1382,14 +1398,15 @@ void kvmi_singlestep_failed(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL(kvmi_singlestep_failed);
 
-static bool __kvmi_tracked_gfn(struct kvm_introspection *kvmi, gfn_t gfn)
+static bool __kvmi_tracked_gfn(struct kvm_introspection *kvmi, gfn_t gfn,
+			       u16 view)
 {
 	u8 ignored_access;
+	int err;
 
-	if (kvmi_get_gfn_access(kvmi, gfn, &ignored_access))
-		return false;
+	err = kvmi_get_gfn_access(kvmi, gfn, &ignored_access, view);
 
-	return true;
+	return !err;
 }
 
 bool kvmi_tracked_gfn(struct kvm_vcpu *vcpu, gfn_t gfn)
@@ -1401,7 +1418,7 @@ bool kvmi_tracked_gfn(struct kvm_vcpu *vcpu, gfn_t gfn)
 	if (!kvmi)
 		return false;
 
-	ret = __kvmi_tracked_gfn(kvmi, gfn);
+	ret = __kvmi_tracked_gfn(kvmi, gfn, kvm_get_ept_view(vcpu));
 
 	kvmi_put(vcpu->kvm);
 

@@ -89,7 +89,7 @@ int kvmi_cmd_set_page_access(struct kvm_introspection *kvmi,
 			     const struct kvmi_msg_hdr *msg,
 			     const struct kvmi_vm_set_page_access *req);
 bool kvmi_restricted_page_access(struct kvm_introspection *kvmi, gpa_t gpa,
-				 u8 access);
+				 u8 access, u16 view);
 bool kvmi_pf_event(struct kvm_vcpu *vcpu, gpa_t gpa, gva_t gva, u8 access);
 void kvmi_add_memslot(struct kvm *kvm, struct kvm_memory_slot *slot,
 		      unsigned long npages);
@@ -140,7 +140,7 @@ int kvmi_arch_cmd_vcpu_control_msr(struct kvm_vcpu *vcpu,
 				   const struct kvmi_vcpu_control_msr *req);
 void kvmi_arch_update_page_tracking(struct kvm *kvm,
 				    struct kvm_memory_slot *slot,
-				    struct kvmi_mem_access *m);
+				    struct kvmi_mem_access *m, u16 view);
 void kvmi_arch_hook(struct kvm *kvm);
 void kvmi_arch_unhook(struct kvm *kvm);
 void kvmi_arch_features(struct kvmi_features *feat);
