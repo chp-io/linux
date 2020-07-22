@@ -1314,6 +1314,8 @@ struct kvm_x86_ops {
 	u16 (*get_ept_view)(struct kvm_vcpu *vcpu);
 	int (*set_ept_view)(struct kvm_vcpu *vcpu, u16 view);
 	int (*control_ept_view)(struct kvm_vcpu *vcpu, u16 view, u8 visible);
+	int (*set_ve_info)(struct kvm_vcpu *vcpu, unsigned long ve_info,
+				bool trigger_vmexit);
 };
 
 struct kvm_x86_nested_ops {
