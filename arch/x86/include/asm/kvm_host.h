@@ -1310,6 +1310,7 @@ struct kvm_x86_ops {
 	bool (*get_eptp_switching_status)(void);
 	u16 (*get_ept_view)(struct kvm_vcpu *vcpu);
 	int (*set_ept_view)(struct kvm_vcpu *vcpu, u16 view);
+	int (*control_ept_view)(struct kvm_vcpu *vcpu, u16 view, u8 visible);
 };
 
 struct kvm_x86_nested_ops {
