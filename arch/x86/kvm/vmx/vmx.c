@@ -7997,6 +7997,11 @@ static bool vmx_get_vmfunc_status(void)
 	return cpu_has_vmx_vmfunc();
 }
 
+static bool vmx_get_eptp_switching_status(void)
+{
+	return kvm_eptp_switching_supported;
+}
+
 static struct kvm_x86_ops vmx_x86_ops __initdata = {
 	.hardware_unsetup = hardware_unsetup,
 
@@ -8139,6 +8144,7 @@ static struct kvm_x86_ops vmx_x86_ops __initdata = {
 	.gpt_translation_fault = vmx_gpt_translation_fault,
 	.control_singlestep = vmx_control_singlestep,
 	.get_vmfunc_status = vmx_get_vmfunc_status,
+	.get_eptp_switching_status = vmx_get_eptp_switching_status,
 };
 
 static __init int hardware_setup(void)
@@ -8177,6 +8183,8 @@ static __init int hardware_setup(void)
 	    !cpu_has_vmx_ept_mt_wb() ||
 	    !cpu_has_vmx_invept_global())
 		enable_ept = 0;
+
+	kvm_eptp_switching_supported = cpu_has_vmx_eptp_switching();
 
 	if (!cpu_has_vmx_ept_ad_bits() || !enable_ept)
 		enable_ept_ad_bits = 0;
