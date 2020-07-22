@@ -7992,6 +7992,11 @@ static void vmx_control_singlestep(struct kvm_vcpu *vcpu, bool enable)
 				CPU_BASED_MONITOR_TRAP_FLAG);
 }
 
+static bool vmx_get_vmfunc_status(void)
+{
+	return cpu_has_vmx_vmfunc();
+}
+
 static struct kvm_x86_ops vmx_x86_ops __initdata = {
 	.hardware_unsetup = hardware_unsetup,
 
@@ -8133,6 +8138,7 @@ static struct kvm_x86_ops vmx_x86_ops __initdata = {
 	.spt_fault = vmx_spt_fault,
 	.gpt_translation_fault = vmx_gpt_translation_fault,
 	.control_singlestep = vmx_control_singlestep,
+	.get_vmfunc_status = vmx_get_vmfunc_status,
 };
 
 static __init int hardware_setup(void)
