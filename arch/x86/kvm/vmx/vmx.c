@@ -3124,6 +3124,32 @@ u64 construct_eptp(struct kvm_vcpu *vcpu, unsigned long root_hpa)
 	return eptp;
 }
 
+static void vmx_construct_eptp_with_index(struct kvm_vcpu *vcpu,
+					  unsigned short view)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	u64 *eptp_list = NULL;
+
+	if (!vmx->eptp_list_pg)
+		return;
+
+	eptp_list = phys_to_virt(page_to_phys(vmx->eptp_list_pg));
+
+	if (!eptp_list)
+		return;
+
+	eptp_list[view] = construct_eptp(vcpu,
+				vcpu->arch.mmu->root_hpa_altviews[view]);
+}
+
+static void vmx_construct_eptp_list(struct kvm_vcpu *vcpu)
+{
+	unsigned short view;
+
+	for (view = 0; view < KVM_MAX_EPT_VIEWS; view++)
+		vmx_construct_eptp_with_index(vcpu, view);
+}
+
 void vmx_load_mmu_pgd(struct kvm_vcpu *vcpu, unsigned long pgd)
 {
 	struct kvm *kvm = vcpu->kvm;
@@ -3134,6 +3160,8 @@ void vmx_load_mmu_pgd(struct kvm_vcpu *vcpu, unsigned long pgd)
 	if (enable_ept) {
 		eptp = construct_eptp(vcpu, pgd);
 		vmcs_write64(EPT_POINTER, eptp);
+
+		vmx_construct_eptp_list(vcpu);
 
 		if (kvm_x86_ops.tlb_remote_flush) {
 			spin_lock(&to_kvm_vmx(kvm)->ept_pointer_lock);
@@ -4336,6 +4364,15 @@ static void ept_set_mmio_spte_mask(void)
 	kvm_mmu_set_mmio_spte_mask(VMX_EPT_MISCONFIG_WX_VALUE, 0);
 }
 
+static int vmx_alloc_eptp_list_page(struct vcpu_vmx *vmx)
+{
+	vmx->eptp_list_pg = alloc_page(GFP_KERNEL | __GFP_ZERO);
+	if (!vmx->eptp_list_pg)
+		return -ENOMEM;
+
+	return 0;
+}
+
 #define VMX_XSS_EXIT_BITMAP 0
 
 /*
@@ -4425,6 +4462,10 @@ static void init_vmcs(struct vcpu_vmx *vmx)
 
 	if (cpu_has_vmx_encls_vmexit())
 		vmcs_write64(ENCLS_EXITING_BITMAP, -1ull);
+
+	if (vmx->eptp_list_pg)
+		vmcs_write64(EPTP_LIST_ADDRESS,
+				page_to_phys(vmx->eptp_list_pg));
 
 	if (vmx_pt_mode_is_host_guest()) {
 		memset(&vmx->pt_desc, 0, sizeof(vmx->pt_desc));
@@ -5913,6 +5954,24 @@ static void vmx_dump_dtsel(char *name, uint32_t limit)
 	       vmcs_readl(limit + GUEST_GDTR_BASE - GUEST_GDTR_LIMIT));
 }
 
+static void dump_eptp_list(void)
+{
+	phys_addr_t eptp_list_phys, *eptp_list = NULL;
+	int i;
+
+	eptp_list_phys = (phys_addr_t)vmcs_read64(EPTP_LIST_ADDRESS);
+	if (!eptp_list_phys)
+		return;
+
+	eptp_list = phys_to_virt(eptp_list_phys);
+
+	pr_err("*** EPTP Switching ***\n");
+	pr_err("EPTP List Address: %p (phys %p)\n",
+		eptp_list, (void *)eptp_list_phys);
+	for (i = 0; i < KVM_MAX_EPT_VIEWS; i++)
+		pr_err("%d: %016llx\n", i, *(eptp_list + i));
+}
+
 void dump_vmcs(void)
 {
 	u32 vmentry_ctl, vmexit_ctl;
@@ -6061,6 +6120,23 @@ void dump_vmcs(void)
 	if (secondary_exec_control & SECONDARY_EXEC_ENABLE_VPID)
 		pr_err("Virtual processor ID = 0x%04x\n",
 		       vmcs_read16(VIRTUAL_PROCESSOR_ID));
+
+	dump_eptp_list();
+}
+
+static unsigned int update_ept_view(struct vcpu_vmx *vmx)
+{
+	u64 *eptp_list = phys_to_virt(page_to_phys(vmx->eptp_list_pg));
+	u64 eptp = vmcs_read64(EPT_POINTER);
+	unsigned int view;
+
+	for (view = 0; view < KVM_MAX_EPT_VIEWS; view++)
+		if (eptp_list[view] == eptp) {
+			vmx->view = view;
+			break;
+		}
+
+	return vmx->view;
 }
 
 /*
@@ -6072,6 +6148,13 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	u32 exit_reason = vmx->exit_reason;
 	u32 vectoring_info = vmx->idt_vectoring_info;
+
+	if (vmx->eptp_list_pg) {
+		unsigned int view = update_ept_view(vmx);
+		struct kvm_mmu *mmu = vcpu->arch.mmu;
+
+		mmu->root_hpa = mmu->root_hpa_altviews[view];
+	}
 
 	/*
 	 * Flush logged GPAs PML buffer, this will make dirty_bitmap more
@@ -6951,12 +7034,21 @@ reenter_guest:
 	return exit_fastpath;
 }
 
+static void vmx_destroy_eptp_list_page(struct vcpu_vmx *vmx)
+{
+	if (vmx->eptp_list_pg) {
+		__free_page(vmx->eptp_list_pg);
+		vmx->eptp_list_pg = NULL;
+	}
+}
+
 static void vmx_free_vcpu(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 
 	if (enable_pml)
 		vmx_destroy_pml_buffer(vmx);
+	vmx_destroy_eptp_list_page(vmx);
 	free_vpid(vmx->vpid);
 	nested_vmx_free_vcpu(vcpu);
 	free_loaded_vmcs(vmx->loaded_vmcs);
@@ -7020,6 +7112,12 @@ static int vmx_create_vcpu(struct kvm_vcpu *vcpu)
 	err = alloc_loaded_vmcs(&vmx->vmcs01);
 	if (err < 0)
 		goto free_pml;
+
+	if (kvm_eptp_switching_supported) {
+		err = vmx_alloc_eptp_list_page(vmx);
+		if (err)
+			goto free_pml;
+	}
 
 	msr_bitmap = vmx->vmcs01.msr_bitmap;
 	vmx_disable_intercept_for_msr(NULL, msr_bitmap, MSR_IA32_TSC, MSR_TYPE_R);

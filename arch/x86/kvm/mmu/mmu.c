@@ -3760,8 +3760,11 @@ void kvm_mmu_free_roots(struct kvm_vcpu *vcpu, struct kvm_mmu *mmu,
 	if (free_active_root) {
 		if (mmu->shadow_root_level >= PT64_ROOT_4LEVEL &&
 		    (mmu->root_level >= PT64_ROOT_4LEVEL || mmu->direct_map)) {
-			mmu_free_root_page(vcpu->kvm, &mmu->root_hpa,
-					   &invalid_list);
+			for (i = 0; i < KVM_MAX_EPT_VIEWS; i++)
+				mmu_free_root_page(vcpu->kvm,
+						   mmu->root_hpa_altviews + i,
+						   &invalid_list);
+			mmu->root_hpa = INVALID_PAGE;
 		} else {
 			for (i = 0; i < 4; ++i)
 				if (mmu->pae_root[i] != 0)
@@ -3821,9 +3824,10 @@ static int mmu_alloc_direct_roots(struct kvm_vcpu *vcpu)
 					      shadow_root_level, true, i);
 			if (!VALID_PAGE(root))
 				return -ENOSPC;
-			if (i == 0)
-				vcpu->arch.mmu->root_hpa = root;
+			vcpu->arch.mmu->root_hpa_altviews[i] = root;
 		}
+		vcpu->arch.mmu->root_hpa =
+		  vcpu->arch.mmu->root_hpa_altviews[kvm_get_ept_view(vcpu)];
 	} else if (shadow_root_level == PT32E_ROOT_LEVEL) {
 		for (i = 0; i < 4; ++i) {
 			MMU_WARN_ON(VALID_PAGE(vcpu->arch.mmu->pae_root[i]));
