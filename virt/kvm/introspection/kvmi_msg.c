@@ -717,10 +717,12 @@ int kvmi_send_vcpu_event(struct kvm_vcpu *vcpu, u32 ev_id,
 		err = vcpui->reply.error;
 
 out:
-	if (err)
+	if (err) {
 		kvmi_sock_shutdown(kvmi);
-	else
+	} else {
+		kvmi_arch_post_reply(vcpu);
 		*action = vcpui->reply.action;
+	}
 
 	return err;
 }
